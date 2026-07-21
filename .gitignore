@@ -1,0 +1,61 @@
+# Secrets
+.env
+
+# Repos clonados
+repos/
+
+# Outputs do scanner (raiz)
+impacto_cnpj*.json
+impacto_cnpj*.md
+impacto_cnpj*.html
+impacto_cnpj*.pdf
+impacto_cnpj*.docx
+scan_*.json
+scan_*.md
+ado_workitems.csv
+*.checkpoint.json
+.scanner_cache.json
+
+# Outputs gerados (docs/)
+docs/output/
+docs/scans/
+docs/analises/
+
+# Google credentials
+reports/spec_gdocs/credentials.json
+reports/spec_gdocs/token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Mypy / Ruff
+.mypy_cache/
+.ruff_cache/
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporários
+tools/_tmp*
+tools/_patch_*.py
+tools/_inspect.py
