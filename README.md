@@ -318,5 +318,4 @@ GITHUB_TOKEN=<seu_github_pat>
 - Arquivos > 500KB são ignorados por padrão (use `--include-large-files` para incluí-los).
 - Campos que não usam a palavra `cnpj` no nome podem não ser detectados sem `--scan-aliases`.
 - Linhas de comentário são descartadas como falso positivo.
-" #   p l a n e j a d o r - i n t e l i g e n t e - d e - m i g r a c a o "      
- 
+"
