@@ -1,5 +1,6 @@
 # Secrets
 .env
+scripts/run_ado.cmd
 
 # Repos clonados
 repos/
