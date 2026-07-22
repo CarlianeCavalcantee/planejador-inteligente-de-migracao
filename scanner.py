@@ -21,7 +21,7 @@ if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
 from dotenv import load_dotenv
 
 import core.cache as cache_mod
-from core.config import load_config, area_priority
+from core.config import load_config, area_priority, get_checkpoint_file, get_titulo
 from core.engine import process_repo
 from core.github_client import list_org_repos, scan_repo_data, audit_alias_coverage, init_token_pool
 from core.local_client import list_local_repos, scan_repo_local
@@ -29,7 +29,7 @@ from core.output import build_output, generate_markdown
 
 load_dotenv()
 
-CHECKPOINT_FILE = "docs/output/impacto_cnpj.checkpoint.json"
+# Resolvido após load_config — ver main()
 
 
 def _setup_logging(level: str = "INFO", bridge=None) -> None:
@@ -138,7 +138,7 @@ async def _scan_all(org: str, repos: list[str], cfg: dict, disk_cache: dict,
                         scan_aliases=scan_aliases,
                         bridge=bridge,
                     )
-                impacts = process_repo(repo, candidates, content_map, priority)
+                impacts = process_repo(repo, candidates, content_map, priority, cfg)
                 stats = {
                     "candidatos": len(candidates),
                     "impactos": len(impacts),
@@ -174,7 +174,7 @@ async def _scan_all(org: str, repos: list[str], cfg: dict, disk_cache: dict,
 # ---------------------------------------------------------------------------
 
 def parse_args():
-    p = argparse.ArgumentParser(description="CNPJ Impact Scanner")
+    p = argparse.ArgumentParser(description="Impact Scanner")
     p.add_argument("-c", "--config", default="scanner-config.yaml")
     p.add_argument("-o", "--org", help="Organização GitHub (sobrescreve config)")
     p.add_argument("-r", "--repos", nargs="+", help="Repositórios específicos")
@@ -236,6 +236,8 @@ def main():
 
     cfg = load_config(args.config)
     org = args.org or cfg["github_org"]
+    global CHECKPOINT_FILE
+    CHECKPOINT_FILE = get_checkpoint_file(cfg)
 
     if args.local:
         pool = None
@@ -353,7 +355,8 @@ def main():
     # ------------------------------------------------------------------
     _setup_logging(args.log_level)
     print(f"\n{'#'*60}")
-    print(f"# CNPJ Impact Scanner")
+    titulo = get_titulo(cfg) if 'cfg' in dir() else "Impact Scanner"
+    print(f"# {titulo}")
     print(f"# Org: {org} | Repos: {len(repos)} | Regras: {len(cfg['regras'])}")
     print(f"# Modo: {'local' if args.local else f'GitHub API ({pool.size} token(s))'} | Concorrência: {effective_concurrency} repos simultâneos")
     print(f"{'#'*60}\n")

@@ -12,6 +12,11 @@ import yaml
 log = logging.getLogger(__name__)
 
 _REQUIRED_TOP = {"sistema_escopo", "github_org", "output_file", "output_markdown", "ignore_paths", "prioridade_area", "regras"}
+
+# Defaults genéricos usados quando o config não define os campos opcionais
+_DEFAULT_TITULO = "Análise de Impacto"
+_DEFAULT_NOME_CAMPO = "campo monitorado"
+_DEFAULT_CHECKPOINT = "docs/output/scan.checkpoint.json"
 _REQUIRED_RULE = {"area", "extensoes", "padroes", "descricao_impacto", "complexidade"}
 _VALID_COMPLEXIDADE = {"Alta", "Média", "Baixa"}
 
@@ -57,6 +62,65 @@ def _compile_rules(cfg: dict) -> None:
                 rule["_compiled"].append(re.compile(pattern, re.IGNORECASE))
             except re.error:
                 pass  # padrão inválido — ignora silenciosamente
+
+
+def get_titulo(cfg: dict) -> str:
+    return cfg.get("titulo_analise") or _DEFAULT_TITULO
+
+
+def get_nome_campo(cfg: dict) -> str:
+    return cfg.get("nome_campo") or _DEFAULT_NOME_CAMPO
+
+
+def get_checkpoint_file(cfg: dict) -> str:
+    return cfg.get("checkpoint_file") or _DEFAULT_CHECKPOINT
+
+
+def get_area_rationale(cfg: dict) -> dict:
+    return cfg.get("area_rationale") or {}
+
+
+def get_rollback_area(cfg: dict) -> dict:
+    return cfg.get("rollback_area") or {}
+
+
+def get_riscos_area(cfg: dict) -> dict:
+    return cfg.get("riscos_area") or {}
+
+
+def get_criterios_area(cfg: dict) -> dict:
+    return cfg.get("criterios_area") or {}
+
+
+def get_parceiros_conhecidos(cfg: dict) -> dict:
+    return cfg.get("parceiros_conhecidos") or {}
+
+
+def get_pontos_cegos(cfg: dict) -> list:
+    return cfg.get("pontos_cegos") or []
+
+
+def get_tela_keywords(cfg: dict) -> list:
+    """Retorna lista de [keywords_list, nome_tela] do config, ou [] se não definido."""
+    raw = cfg.get("tela_keywords") or []
+    return [(entry["keywords"], entry["nome"]) for entry in raw if "keywords" in entry and "nome" in entry]
+
+
+def get_sql_alias_columns(cfg: dict) -> str | None:
+    """Retorna regex de aliases de coluna SQL configurados, ou None."""
+    aliases = cfg.get("sql_alias_columns")
+    if not aliases:
+        return None
+    escaped = "|".join(re.escape(a) for a in aliases)
+    return f"(?i)\\b({escaped})\\b"
+
+
+def get_secoes_extras(cfg: dict) -> list:
+    return cfg.get("secoes_extras") or []
+
+
+def get_rollback_base(cfg: dict) -> list:
+    return cfg.get("rollback_base") or []
 
 
 def area_priority(cfg: dict) -> dict[str, int]:

@@ -1,11 +1,14 @@
-# CNPJ Impact Scanner
+# Impact Scanner
 
-Ferramenta de análise estática que varre repositórios GitHub de uma organização em busca de código impactado pela mudança do CNPJ para o formato alfanumérico (Receita Federal). Gera relatórios em JSON e Markdown com matriz de impacto, ordem de migração, checklist de rollback e mapeamento de parceiros externos.
+Ferramenta de análise estática configurável que varre repositórios GitHub de uma organização em busca de código impactado por uma mudança de domínio definida em `scanner-config.yaml`. Originalmente criada para o CNPJ alfanumérico (Receita Federal), mas o motor de scan é 100% genérico — basta trocar as regras e os textos de relatório no arquivo de configuração.
+
+Gera relatórios em JSON, Markdown, HTML, PDF, Word e Azure DevOps com matriz de impacto, plano de migração inteligente, trilhas paralelas, risk score, heatmap de risco, checklist de rollback, critérios de aceite e mapeamento de parceiros externos.
 
 ## Pré-requisitos
 
 - Python 3.11+
 - GitHub Personal Access Token com permissão `repo` (leitura)
+- `git` instalado no PATH (necessário para `scripts/clone_repos.py`)
 
 ## Instalação
 
@@ -21,8 +24,12 @@ cp .env.example .env
 copy .env.example .env
 ```
 
-```bash
-# edite .env e preencha GITHUB_TOKEN
+Edite `.env` e preencha ao menos `GITHUB_TOKEN`. Para aumentar o rate limit da Search API, adicione tokens extras — cada um tem cota independente:
+
+```env
+GITHUB_TOKEN=ghp_token_principal
+GITHUB_TOKEN_2=ghp_token_secundario
+GITHUB_TOKEN_3=ghp_token_terciario
 ```
 
 ## Uso
@@ -31,15 +38,13 @@ copy .env.example .env
 # Scan completo da org configurada
 python scanner.py
 
-# Repos específicos — gera arquivos com nome derivado do(s) repo(s)
+# Repos específicos
 python scanner.py -r repo1 repo2 repo3
-# saída: scan_repo1_repo2_+1.json / .md / .docx
 
 # Repo único
 python scanner.py -r backoffice
-# saída: scan_backoffice.json / .md / .docx
 
-# Lista de repos a partir de arquivo (um por linha)
+# Lista de repos a partir de arquivo (um por linha, # para comentários)
 python scanner.py --repos-file repos.txt
 
 # Excluir repos a partir de arquivo
@@ -48,8 +53,8 @@ python scanner.py --exclude-repos-file ignore.txt
 # Sobrescrever org
 python scanner.py -o minha-org
 
-# Usar config alternativa
-python scanner.py -c outro-config.json
+# Usar config alternativa (.json ou .yaml/.yml)
+python scanner.py -c outro-config.yaml
 
 # Apenas JSON ou apenas Markdown
 python scanner.py --json-only
@@ -58,10 +63,10 @@ python scanner.py --md-only
 # Retomar execução interrompida
 python scanner.py --resume
 
-# Limpar cache e reiniciar
+# Limpar cache e checkpoint antes de rodar
 python scanner.py --clear-cache
 
-# Incluir busca por aliases de campo (taxId, cpfCnpj, etc.) em todos os repos
+# Incluir busca por aliases de campo em todos os repos
 python scanner.py --scan-aliases
 
 # Auditar aliases em repos sem impacto (usa Search API — mais lento)
@@ -70,7 +75,7 @@ python scanner.py --audit-aliases
 # Baixar arquivos > 500KB via Blob API
 python scanner.py --include-large-files
 
-# Repos processados em paralelo (padrão: 2; recomendado 8+ com --local)
+# Repos processados em paralelo (padrão: 2 para API, 8 para --local)
 python scanner.py --concurrency 8
 
 # Usar repos clonados localmente em vez da GitHub API
@@ -83,19 +88,82 @@ python scanner.py --no-ui
 python scanner.py --log-level DEBUG
 ```
 
-## Configuração (`scanner-config.json`)
+### Interface TUI (padrão)
+
+Quando `textual` está instalado, o scanner exibe uma interface interativa com:
+
+- Painel lateral com status de cada repo em tempo real (⏳ pendente → 🔄 processando → ✅ ok / ❌ erro)
+- Tabela de impactos detectados com área e complexidade coloridas
+- Painel de log com timestamps
+- Contador de impactos por complexidade (Alta / Média / Baixa) e tempo decorrido
+- Tecla `q` para sair
+
+Use `--no-ui` para desativar (útil em CI/CD ou quando `textual` não está instalado).
+
+### Clonar repos para scan local
+
+O modo `--local` é significativamente mais rápido que a GitHub API e não consome rate limit.
+
+```bash
+# Clonar todos os repos da org (shallow clone, paralelo)
+python scripts/clone_repos.py
+
+# Repos específicos
+python scripts/clone_repos.py -r repo1 repo2
+
+# Atualizar repos já clonados (git pull)
+python scripts/clone_repos.py --update
+
+# Diretório de destino alternativo (padrão: repos/)
+python scripts/clone_repos.py -d /outro/caminho
+
+# Controlar paralelismo (padrão: 8)
+python scripts/clone_repos.py --concurrency 4
+```
+
+Após clonar:
+
+```bash
+python scanner.py --local repos/ --concurrency 8
+```
+
+## Configuração (`scanner-config.yaml`)
+
+O arquivo de configuração controla tanto o comportamento do scan quanto todos os textos dos relatórios gerados. Campos marcados como opcionais têm fallback para valores padrão — configs existentes continuam funcionando sem modificação.
+
+### Campos principais
 
 | Campo | Descrição |
 |-------|-----------|
+| `titulo_analise` | Título exibido no banner e nos relatórios (opcional) |
+| `nome_campo` | Nome do campo analisado, ex: `CNPJ` (opcional) |
+| `checkpoint_file` | Caminho do arquivo de checkpoint (opcional) |
 | `github_org` | Organização GitHub a escanear |
 | `repositorios` | Lista de repos específicos (vazio = todos da org) |
 | `ignore_paths` | Caminhos/extensões ignorados (node_modules, dist, etc.) |
 | `prioridade_area` | Ordem de prioridade das áreas para deduplicação e migração |
 | `regras` | Lista de regras com padrões regex por área e extensão de arquivo |
-| `output_file` | Caminho do JSON de saída (padrão: `impacto_cnpj.json`) |
-| `output_markdown` | Caminho do Markdown de saída (padrão: `impacto_cnpj.md`) |
+| `output_file` | Caminho do JSON de saída |
+| `output_markdown` | Caminho do Markdown de saída |
 
-## Áreas cobertas pelas regras
+### Campos opcionais de relatório
+
+Todos os textos dos relatórios são configuráveis. Se ausentes, o scanner usa os defaults embutidos:
+
+| Campo | Descrição |
+|-------|-----------|
+| `sql_alias_columns` | Aliases de coluna SQL a detectar estruturalmente |
+| `pontos_cegos` | Lista de pontos cegos conhecidos para o relatório |
+| `parceiros_conhecidos` | Parceiros externos mapeados |
+| `rollback_base` | Itens base do checklist de rollback |
+| `rollback_area` | Itens de rollback por área técnica |
+| `riscos_area` | Riscos mapeados por área |
+| `criterios_area` | Critérios de aceite por área |
+| `criterios_encerramento` | Critérios de encerramento da migração |
+| `tela_keywords` | Mapeamento de keywords → nome de tela para QA |
+| `secoes_extras` | Seções adicionais no relatório Markdown (tabelas genéricas) |
+
+## Áreas cobertas pelas regras (configuração padrão CNPJ)
 
 | ID | Área | Exemplos detectados |
 |----|------|---------------------|
@@ -106,120 +174,84 @@ python scanner.py --log-level DEBUG
 | DB-001 | Banco de Dados | `VARCHAR(14)`, `NUMBER(14)`, índices e constraints |
 | MIGRATION-001 | Banco de Dados | Scripts Flyway/Liquibase com tipo incompatível |
 | API-001 | API/Contrato | OpenAPI/Swagger/Protobuf com pattern numérico |
-| INT-001 | Integrações | Kafka, SQS, SOAP, REST clients com CNPJ |
+| INT-001 | Integrações | Kafka, SQS, SOAP, REST clients |
 | XSD-001 | Integrações | Schemas XSD/WSDL com pattern numérico |
 | BE-001 | Backend | Validadores, formatadores, regex `\d{14}` |
 | STR-001 | Backend | `substring(0,8)`, `slice`, índice posicional |
 | BATCH-001 | Processamento/Batch | Jobs, ETL, SPED, NFS-e |
 | JASPER-001 | Processamento/Batch | Templates `.jrxml` com máscara numérica |
 | TEMPLATE-001 | Processamento/Batch | Templates Freemarker/Velocity |
-| TEST-001 | Testes/Qualidade | Fixtures, mocks, seeds com CNPJ hardcoded |
+| TEST-001 | Testes/Qualidade | Fixtures, mocks, seeds hardcoded |
 | FE-001 | Frontend | Máscaras, validações, `inputMode="numeric"` |
-| DOC-001 | Documentação | README/docs com CNPJ exclusivamente numérico |
+| DOC-001 | Documentação | README/docs com formato exclusivamente numérico |
 
 ## Saídas geradas
 
 | Arquivo | Conteúdo |
 |---------|----------|
-| `impacto_cnpj.json` | Relatório completo com matriz de impacto, estatísticas, ordem de migração por módulo, checklist de rollback, riscos, parceiros externos e telas para QA |
-| `impacto_cnpj.md` | Versão Markdown do relatório para visualização no GitHub/Confluence |
+| `impacto_cnpj.json` | Relatório completo com matriz de impacto, estatísticas, ordem de migração, checklist de rollback, riscos, parceiros externos e telas para QA |
+| `impacto_cnpj.md` | Versão Markdown para visualização no GitHub/Confluence |
 | `impacto_cnpj.html` | Dashboard HTML interativo com gráficos, filtros e navegação por repositório |
 | `impacto_cnpj.pdf` | Relatório em PDF formatado (ReportLab) |
 | `impacto_cnpj.docx` | Documento Word com todas as seções da SPEC |
-| `ado_workitems.csv` | Hierarquia Feature (fluxo) > PBI ([Fluxo] repo) > Task para importação no Azure DevOps |
+| `ado_workitems.csv` | Hierarquia Feature > PBI > Task para importação no Azure DevOps |
 
-> Cada JSON gerado inclui os campos `scan_id` (ex: `20250115_143022`) e `data_execucao` (ISO 8601 com fuso horário BRT) para identificação e comparação entre execuções.
+Cada JSON inclui `scan_id` (ex: `20250115_143022`) e `data_execucao` (ISO 8601 BRT) para rastreabilidade entre execuções.
+
+## Comparação entre scans (`scan_diff`)
+
+```bash
+# Compara dois JSONs e exibe resumo no terminal
+python reports/scan_diff.py scan_anterior.json scan_atual.json
+
+# Salva o diff em arquivo
+python reports/scan_diff.py scan_anterior.json scan_atual.json --out diff.json
+
+# Embute o diff no JSON atual e regenera o dashboard HTML
+python reports/scan_diff.py scan_anterior.json scan_atual.json --embed
+```
+
+O diff classifica cada impacto como: 🔴 novo / 🟢 resolvido / 🟡 alterado / ⚪ mantido.
 
 ## Exportações e relatórios adicionais
 
 ### Dashboard HTML
 
 ```bash
-# A partir do JSON padrão
 python reports/dashboard.py
-
-# A partir de um JSON específico (ex: scan de repo único)
 python reports/dashboard.py scan_backoffice.json
 ```
-
-Gera `impacto_cnpj.html` (ou `scan_backoffice.html`) com:
-- KPIs, gráficos de área/complexidade/repositório
-- Tabela de impactos por repositório com filtros por área, complexidade e busca livre
-- Arquivos críticos, ordem de migração, parceiros externos e pontos cegos
-- `scan_id` e data de geração exibidos na topbar para rastreabilidade
 
 ### PDF
 
 ```bash
-# A partir do JSON padrão
 python spec_pdf/generate_pdf.py
-
-# Especificando JSON e arquivo de saída
 python spec_pdf/generate_pdf.py scan_backoffice.json scan_backoffice.pdf
 ```
 
-Requer `reportlab`. Gera relatório paginado com cabeçalho/rodapé, capa, sumário, matriz, riscos, parceiros e critérios de aceite.
+Requer `reportlab`.
 
 ### Word (.docx)
 
 ```bash
-# A partir do JSON padrão → impacto_cnpj.docx
 python reports/generate_docx.py
-
-# A partir de um JSON específico → mesmo nome com extensão .docx
 python reports/generate_docx.py scan_backoffice.json
-
-# Especificando JSON e arquivo de saída
 python reports/generate_docx.py scan_backoffice.json relatorio_backoffice.docx
 ```
 
-Requer `python-docx`. Gera a SPEC completa em formato Word com tabelas coloridas por complexidade. O `scan_id` aparece na capa do documento.
+Requer `python-docx`.
 
 ### Azure DevOps
 
-Cria work items na hierarquia **Épico → Feature (fluxo de negócio) → PBI ([Fluxo] repo) → Task**.
-
-```
-Épico
-└── Migração CNPJ Alfanumérico
-
-    Feature
-    ├── PIX
-    ├── Conta Digital
-    └── ...
-
-        PBI
-        ├── [PIX] pix-api
-        ├── [PIX] pix-mobile
-        └── [Conta Digital] pix-api   ← mesmo repo, escopo diferente
-
-            Tasks (impactos detectados)
-            ├── [IMP-0001] PixRequest.java:42 — Backend Alta
-            ├── [IMP-0002] PixKey.java:18 — Banco de Dados Alta
-            └── ...
-
-            Tasks fixas de encerramento (geradas automaticamente)
-            ├── Code Review — Revisão técnica e aprovação Tech Lead
-            ├── Testes — Unitários, Integração e Regressão
-            ├── Deploy — DEV / QA / HML
-            ├── Homologação — Validar migração do repositório
-            └── Validação Scanner — Executar scanner e confirmar ausência de ocorrências
-```
-
-> Um repositório que participa de múltiplos fluxos gera um PBI por fluxo (`[PIX] pix-api`, `[Conta Digital] pix-api`), cada um com o escopo específico daquele fluxo. Links de dependência entre PBIs são criados automaticamente com base na ordem de migração inferida pelo scanner.
+Hierarquia: **Épico → Feature (fluxo) → PBI ([Fluxo] repo) → Task**
 
 ```bash
-# Dry-run (visualiza sem criar)
-python reports/azuredevops_export.py
-
-# Exportar CSV
-python reports/azuredevops_export.py --csv
-
-# Criar via API REST
-python reports/azuredevops_export.py --create
+python reports/azuredevops_export.py          # dry-run
+python reports/azuredevops_export.py --csv    # exporta CSV
+python reports/azuredevops_export.py --create # cria via API REST
 ```
 
-Variáveis de ambiente necessárias para `--create`:
+Variáveis necessárias para `--create`:
 
 ```env
 ADO_ORG=https://dev.azure.com/<org>
@@ -228,22 +260,116 @@ ADO_PAT=<personal-access-token>
 ADO_EPIC_ID=<id-numerico-do-epico>
 ```
 
-Ou use o `run_ado.cmd` (Windows) preenchendo as variáveis no arquivo.
-
 ### Google Docs
 
-Requer service account do Google Cloud. Veja `spec_gdocs/SETUP.md` para configuração completa.
+Requer service account do Google Cloud. Veja `reports/spec_gdocs/SETUP.md`.
 
 ```bash
-python spec_gdocs/generate_gdoc.py
+python reports/spec_gdocs/generate_gdoc.py
+```
+
+## Testes
+
+O projeto usa `pytest` com cobertura mínima de 60% em `core/`.
+
+```bash
+# Instalar dependências de dev
+pip install -r requirements-dev.txt
+
+# Rodar testes
+pytest tests/
+
+# Com cobertura
+pytest tests/ --cov=core --cov-report=term-missing
+```
+
+Ou via Makefile:
+
+```bash
+make test
+make test-cov
+```
+
+### O que está coberto
+
+| Módulo | Arquivo de teste | O que testa |
+|--------|-----------------|-------------|
+| `core/cache.py` | `tests/test_cache.py` | put/get, roundtrip, SHA errado, save/load, arquivo corrompido |
+| `core/config.py` | `tests/test_config.py` | compilação de regras, regex inválido ignorado, prioridade de área, load_config |
+| `core/engine.py` | `tests/test_engine.py` | false positives, scan_file, scan_sql_structural, deduplicate, process_repo |
+| `core/output.py` | `tests/test_output.py` | _calc_prioridade, build_output (estrutura, contagem, IDs, rollback), generate_markdown |
+
+## Makefile
+
+```bash
+make install    # pip install requirements + requirements-dev
+make lint       # ruff check + mypy
+make fmt        # ruff format + ruff check --fix
+make test       # pytest tests/
+make test-cov   # pytest com cobertura
+make scan       # python scanner.py
+make clean      # remove __pycache__, *.pyc, checkpoint
+```
+
+## Ferramentas de análise (`tools/`)
+
+| Script | Descrição |
+|--------|-----------|
+| `analyze.py` | Distribuição de padrões que geraram impactos, top 30 regras |
+| `analyze_telas.py` | Análise das telas inferidas para QA |
+| `check_coverage.py` | Verifica cobertura de repos e aliases suspeitos |
+| `check_exts.py` | Lista extensões de arquivo encontradas nos impactos |
+| `blind_spots.py` | Identifica pontos cegos no scan |
+| `update_telas.py` | Atualiza mapeamento de telas no JSON de saída |
+
+## Estrutura do projeto
+
+```
+scanner/
+├── scanner.py                  # Entry point e orquestrador CLI
+├── scanner-config.yaml         # Configuração principal (regras, org, textos de relatório)
+├── scanner-config.json         # Config alternativa em JSON
+├── core/
+│   ├── config.py               # Carregamento de config, compilação de regras, getters opcionais
+│   ├── engine.py               # Scan por arquivo, deduplicação, contagem de chamadores
+│   ├── github_client.py        # Client async para GitHub API (Search + Tree + Blob)
+│   ├── local_client.py         # Client para repos clonados localmente
+│   ├── cache.py                # Cache em disco de conteúdo de arquivos
+│   ├── output.py               # Consolidação de impactos e geração de relatórios
+│   ├── ui.py                   # Interface TUI (Textual)
+│   └── planner/                # Motor de planejamento de migração
+│       ├── planner.py
+│       ├── strategies.py
+│       ├── trails.py
+│       ├── risk.py
+│       ├── simulation.py
+│       ├── dependencies.py
+│       ├── metrics.py
+│       └── models.py
+├── reports/
+│   ├── dashboard.py            # Dashboard HTML interativo
+│   ├── generate_docx.py        # Exportação para Word (.docx)
+│   ├── scan_diff.py            # Comparação entre dois scans
+│   ├── azuredevops_export.py   # Criação de work items no Azure DevOps
+│   ├── docx_builder/           # Módulos internos do gerador DOCX
+│   └── spec_gdocs/             # Exportação para Google Docs
+├── spec_pdf/                   # Geração de relatório em PDF
+├── scripts/                    # clone_repos.py, run_ado.cmd, run_lote_*.cmd
+├── tests/                      # Testes automatizados (pytest)
+│   ├── conftest.py
+│   ├── test_cache.py
+│   ├── test_config.py
+│   ├── test_engine.py
+│   └── test_output.py
+└── tools/                      # Utilitários de análise e cobertura
 ```
 
 ## Sprints atribuídas automaticamente por módulo
 
-Cada módulo (repositório) recebe uma sprint baseada na sua posição na ordem de migração. A ordem é determinada pelo número de impactos de alta complexidade (decrescente) e total de impactos. Dentro de cada módulo, as áreas seguem a sequência técnica:
+Cada módulo recebe uma sprint baseada na sua posição na ordem de migração (número de impactos Alta decrescente). Dentro de cada módulo, as áreas seguem a sequência técnica:
 
-| Sequência interna | Área |
-|-------------------|------|
+| Sequência | Área |
+|-----------|------|
 | 1º | Segurança/LGPD |
 | 2º | Banco de Dados |
 | 3º | API/Contrato |
@@ -254,69 +380,38 @@ Cada módulo (repositório) recebe uma sprint baseada na sua posição na ordem 
 | 8º | Testes/Qualidade + Documentação |
 | 9º | Frontend |
 
-## Dependências por módulo
+## Dependências
 
-| Módulo | Dependências extras |
-|--------|---------------------|
-| Scanner principal | `aiohttp`, `python-dotenv`, `tqdm`|
+| Módulo | Pacotes |
+|--------|---------|
+| Scanner principal | `aiohttp`, `python-dotenv`, `tqdm`, `pyyaml` |
+| TUI | `textual>=0.80.0` |
 | PDF | `reportlab` |
 | Word | `python-docx` |
-| Azure DevOps | `requests` (já incluso) |
 | Google Docs | `google-api-python-client`, `google-auth` |
-
-## Ferramentas de análise (`tools/`)
-
-Scripts utilitários para inspecionar o resultado do scan:
-
-| Script | Descrição |
-|--------|-----------|
-| `analyze.py` | Distribuição de padrões que geraram impactos, top 30 regras |
-| `analyze_telas.py` | Análise das telas inferidas para QA |
-| `check_coverage.py` | Verifica cobertura de repos e aliases suspeitos |
-| `check_exts.py` | Lista extensões de arquivo encontradas nos impactos |
-| `update_telas.py` | Atualiza mapeamento de telas no JSON de saída |
-
-```bash
-python tools/analyze.py
-python tools/analyze_telas.py
-python tools/check_coverage.py
-python tools/check_exts.py
-python tools/update_telas.py
-```
-
-## Estrutura do projeto
-
-```
-scanner/
-├── scanner.py              # Entry point e orquestrador CLI
-├── scanner-config.json     # Configuração de regras e org
-├── core/
-│   ├── config.py           # Carregamento de config e compilação de regras
-│   ├── engine.py           # Scan por arquivo, deduplicação, contagem de chamadores
-│   ├── github_client.py    # Client async para GitHub API (Search + Tree + Blob)
-│   ├── cache.py            # Cache em disco de conteúdo de arquivos
-│   └── output.py           # Consolidação de impactos e geração de relatórios
-├── reports/
-│   ├── dashboard.py        # Dashboard HTML interativo
-│   ├── generate_docx.py    # Exportação para Word (.docx)
-│   ├── docx_builder/       # Módulos internos do gerador DOCX
-│   └── azuredevops_export.py # Criação de work items no Azure DevOps
-├── spec_pdf/               # Geração de relatório em PDF
-├── spec_gdocs/             # Exportação para Google Docs
-└── tools/                  # Utilitários de análise e cobertura
-```
+| Dev/testes | `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`, `mypy`, `pre-commit` |
 
 ## Variáveis de ambiente
 
 ```env
+# Obrigatório
 GITHUB_TOKEN=<seu_github_pat>
+
+# Opcionais — tokens extras aumentam o rate limit da Search API
+GITHUB_TOKEN_2=<segundo_pat>
+GITHUB_TOKEN_3=<terceiro_pat>
+# ... até GITHUB_TOKEN_9
+
+# Azure DevOps (necessário para --create)
+ADO_ORG=https://dev.azure.com/<org>
+ADO_PROJECT=<projeto>
+ADO_PAT=<personal-access-token>
+ADO_EPIC_ID=<id-numerico-do-epico>
 ```
 
 ## Limitações conhecidas
 
 - A Search API do GitHub retorna no máximo 1000 resultados por repositório (o scanner faz fallback via tree completa automaticamente).
 - Arquivos > 500KB são ignorados por padrão (use `--include-large-files` para incluí-los).
-- Campos que não usam a palavra `cnpj` no nome podem não ser detectados sem `--scan-aliases`.
+- Campos que não usam o nome do campo no identificador podem não ser detectados sem `--scan-aliases`.
 - Linhas de comentário são descartadas como falso positivo.
-" #   p l a n e j a d o r - i n t e l i g e n t e - d e - m i g r a c a o "      
- 

@@ -1,5 +1,8 @@
 sistema_escopo: BScash
 github_org: BScash
+titulo_analise: "Análise de Impacto – CNPJ Alfanumérico"
+nome_campo: CNPJ
+checkpoint_file: docs/output/impacto_cnpj.checkpoint.json
 versao_regras: '1.3'
 data_limite_migracao: null
 batch_size: 5
@@ -21,6 +24,176 @@ ignore_paths:
 - Stub.java
 - stub.java
 repositorios: []
+
+sql_alias_columns:
+- documento
+- doc_number
+- nr_doc
+- num_doc
+- tax_id
+- taxid
+- federal_id
+- federalid
+- cpf_cnpj
+- cpfcnpj
+- company_id
+- corporate_id
+- registration_number
+- documento_federal
+
+pontos_cegos:
+- id: PC-001
+  descricao: "Campos que não usam a palavra cnpj no nome podem não ser encontrados."
+  recomendacao: "Usar --scan-aliases."
+- id: PC-002
+  descricao: "Search API retorna max 1000 resultados por repo."
+  recomendacao: "Observe o log [tree-full]."
+- id: PC-003
+  descricao: "Arquivos > 500KB são ignorados."
+  recomendacao: "Verificar manualmente arquivos SQL grandes."
+- id: PC-004
+  descricao: "Linhas de comentário são descartadas."
+  recomendacao: "Revisar comentários TODO/FIXME."
+- id: PC-005
+  descricao: "Repos sem impacto podem usar aliases."
+  recomendacao: "Validar manualmente repos PJ."
+
+parceiros_conhecidos:
+  bradesco: "Banco Bradesco — layout CNAB/Febraban pode rejeitar alfanumérico"
+  bb: "Banco do Brasil — validação de CNPJ no layout de remessa"
+  itau: "Banco Itaú — layout CNAB240"
+  santander: "Banco Santander — layout CNAB240"
+  caixa: "Caixa Econômica Federal — layout CNAB240"
+  serpro: "SERPRO — consulta CNPJ na Receita Federal"
+  receita: "Receita Federal — consulta CNPJ"
+  sped: "SPED/EFD — obrigação fiscal, layout fixo numérico"
+  reinf: "EFD-Reinf — obrigação fiscal, layout fixo numérico"
+  esocial: "eSocial — obrigação trabalhista, layout fixo numérico"
+  nfse: "NFS-e — nota fiscal de serviço, schema XML com CNPJ"
+  celcoin: "Celcoin — PIX/pagamentos"
+  caf: "CAF — background check / KYC"
+
+rollback_base:
+- "Backup do banco de dados realizado antes da migration?"
+- "Feature flag ativa para reverter sem novo deploy?"
+- "Monitoramento de erros configurado para alertar em < 5 min?"
+- "Plano de comunicação com stakeholders em caso de rollback definido?"
+
+rollback_area:
+  Banco de Dados:
+  - "Script de rollback da migration testado em homologação?"
+  - "Colunas antigas mantidas como nullable durante período de convivência?"
+  - "Índices antigos preservados até validação completa?"
+  API/Contrato:
+  - "Rota /v1 mantida ativa durante período de convivência dual?"
+  - "Consumidores notificados com antecedência mínima de 30 dias?"
+  - "Testes de contrato passando para ambas as versões?"
+  Integrações:
+  - "Parceiros externos confirmaram suporte ao novo formato?"
+  - "Adapter de conversão numérico↔alfanumérico implementado e testado?"
+  Backend:
+  - "Novo validador alfanumérico coberto por testes unitários?"
+  - "Lógica de substring/slice revisada e testada?"
+  Frontend:
+  - "Máscara antiga disponível via feature flag para rollback imediato?"
+  - "Testes E2E cobrindo entrada alfanumérica?"
+  Infraestrutura/CI:
+  - "Secrets de CI atualizados e pipeline testado?"
+  - "Imagens Docker antigas tagueadas para rollback rápido?"
+
+riscos_area:
+  Segurança/LGPD:
+    risco: "CNPJ real hardcoded no código (violação LGPD)"
+    impacto: "Dados de clientes expostos no repositório. Risco legal e de compliance."
+    mitigacao: "Substituir por massa sintética ou variável de ambiente. Auditar histórico do git."
+  Banco de Dados:
+    risco: "Truncamento ou erro de inserção em colunas numéricas"
+    impacto: "Colunas NUMBER/BIGINT ou VARCHAR(14) não aceitam caracteres alfabéticos."
+    mitigacao: "Migrar colunas para VARCHAR com tamanho adequado (mínimo 20)."
+  API/Contrato:
+    risco: "Quebra de contratos em APIs expostas (Breaking Change)"
+    impacto: "Clientes integrados que enviarem letras receberão erro 400 ou crash interno."
+    mitigacao: "Implementar versionamento de rota (/v2/) e período de convivência dual."
+  Backend:
+    risco: "Falha em validadores e manipulação posicional"
+    impacto: "CNPJs alfanuméricos válidos serão rejeitados por regex ou substring."
+    mitigacao: "Substituir regex numérica pela nova regra alfanumérica da Receita Federal."
+  Frontend:
+    risco: "Bloqueio de digitação pelo usuário"
+    impacto: "Máscaras numéricas impedem entrada de letras no campo CNPJ."
+    mitigacao: "Atualizar máscaras e validações de input para aceitar alfanumérico."
+
+criterios_area:
+  Banco de Dados:
+  - "Todas as colunas CNPJ com tipo VARCHAR/CHAR e tamanho >= 20."
+  - "Nenhuma constraint CHECK limita o campo a 14 caracteres numéricos."
+  - "Scripts Flyway/Liquibase aplicados com sucesso em DEV, QA e HML."
+  - "Rollback da migration testado e documentado."
+  API/Contrato:
+  - "Contrato OpenAPI/Swagger atualizado: pattern aceita [A-Z0-9]{14,20}."
+  - "maxLength >= 20 em todos os campos CNPJ do schema."
+  - "Contract tests passando para CNPJ numérico e alfanumérico."
+  Backend:
+  - "Nenhuma ocorrência de regex \\d{14} para validação de CNPJ."
+  - "Nenhuma chamada a Long.parseLong / Integer.parseInt com CNPJ."
+  - "Validador alfanumérico coberto por testes unitários."
+  Frontend:
+  - "Campo CNPJ aceita entrada de letras maiúsculas (A-Z)."
+  - "Máscara atualizada para formato alfanumérico."
+  - "Testes E2E passando com CNPJ alfanumérico."
+
+criterios_encerramento:
+- "Scanner executado no repositório após a migração: zero ocorrências de impacto."
+- "Code review aprovado pelo Tech Lead."
+- "Deploy realizado em DEV, QA e HML sem erros."
+- "Homologação validada pelo PO/QA com CNPJ alfanumérico."
+
+tela_keywords:
+- keywords: [adesao, onboarding, cadastro, aberturaconta, pessoajuridica, pj]
+  nome: "Abertura de Conta / Onboarding PJ"
+- keywords: [pix]
+  nome: "PIX (chave, transferência, favorito)"
+- keywords: [ted, transferencia, transfer]
+  nome: "TED / Transferência"
+- keywords: [boleto, cobranca, cobrancaterceiro]
+  nome: "Boleto / Cobrança"
+- keywords: [ccb, credito, negociacao]
+  nome: "Crédito / CCB / Negociação"
+- keywords: [nfse, notafiscal, nota_fiscal]
+  nome: "Emissão NFS-e"
+- keywords: [relatorio, report, orcamento]
+  nome: "Relatórios / Impressão"
+- keywords: [comprovante]
+  nome: "Comprovante de Transação"
+- keywords: [conta, contadigital]
+  nome: "Conta Digital"
+- keywords: [banco, remessa, febraban, cnab]
+  nome: "Remessa Bancária / CNAB"
+- keywords: [input, form, mask, mascara]
+  nome: "Componente de Input / Máscara"
+- keywords: [validacao, validation, validator]
+  nome: "Validação (shared)"
+
+secoes_extras:
+- titulo: "🏢 Pessoa Jurídica — Documentos e Fluxos Impactados"
+  descricao: "O CNPJ alfanumérico impacta diretamente todos os documentos e fluxos de Pessoa Jurídica."
+  blocos:
+  - subtitulo: "Documentos PJ que referenciam CNPJ"
+    tabela:
+      headers: [Documento, Impacto, "Ação Necessária"]
+      rows:
+      - ["Contrato Social", "CNPJ do sócio/empresa em campo numérico", "Atualizar template para aceitar alfanumérico"]
+      - ["Procuração", "CNPJ do outorgante/outorgado", "Atualizar validação e máscara"]
+      - ["Ficha Cadastral PJ", "Campo CNPJ com máscara numérica", "Atualizar máscara e regex"]
+      - ["Comprovante de Abertura de Conta PJ", "CNPJ impresso no documento", "Atualizar template de geração"]
+  - subtitulo: "Fluxos de Onboarding PJ"
+    tabela:
+      headers: [Etapa, Risco, "Recomendação"]
+      rows:
+      - ["Digitação do CNPJ", "Máscara numérica bloqueia letras", "Atualizar máscara para aceitar [A-Z0-9]"]
+      - ["Consulta Receita Federal", "API pode retornar CNPJ alfanumérico", "Validar resposta da API"]
+      - ["KYC / Background Check", "Parceiro pode rejeitar CNPJ alfanumérico", "Alinhar com parceiro de KYC"]
+
 prioridade_area:
 - Segurança/LGPD
 - Banco de Dados

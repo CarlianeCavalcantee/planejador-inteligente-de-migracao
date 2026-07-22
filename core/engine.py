@@ -6,7 +6,7 @@ import logging
 import os
 import re
 
-from core.config import DUAL_COMPAT_RES, FALSE_POSITIVE_RES
+from core.config import DUAL_COMPAT_RES, get_sql_alias_columns, FALSE_POSITIVE_RES
 
 log = logging.getLogger(__name__)
 
@@ -96,18 +96,20 @@ _SQL_ALIAS_COL = re.compile(
 )
 _SQL_TABLE_START = re.compile(r"(?i)(CREATE|ALTER)\s+TABLE\s+(\S+)")
 _SQL_CNPJ_COL = re.compile(r"(?i)\bcnpj\b")
-_SQL_ALIAS_NAMES = re.compile(
+_SQL_ALIAS_NAMES_DEFAULT = re.compile(
     r"(?i)\b(documento|doc_number|nr_doc|num_doc|tax_id|taxid|federal_id|federalid"
     r"|cpf_cnpj|cpfcnpj|company_id|corporate_id|registration_number|documento_federal)\b"
 )
 
 
-def scan_sql_structural(content: str, filepath: str) -> list[dict]:
+def scan_sql_structural(content: str, filepath: str, cfg: dict | None = None) -> list[dict]:
     """
-    Detecta colunas com alias de CNPJ (VARCHAR 14-20) em tabelas que já
-    possuem outra coluna com 'cnpj' no nome, ou colunas cujo nome bate
-    diretamente com _SQL_ALIAS_NAMES e têm tamanho 14-20.
+    Detecta colunas com aliases configurados (VARCHAR 14-20) em tabelas que já
+    possuem outra coluna com o campo principal no nome, ou colunas cujo nome
+    bate diretamente com os aliases conhecidos.
     """
+    alias_pattern_str = get_sql_alias_columns(cfg) if cfg else None
+    alias_re = re.compile(alias_pattern_str) if alias_pattern_str else _SQL_ALIAS_NAMES_DEFAULT
     matches = []
     lines = content.splitlines()
     i = 0
@@ -117,7 +119,6 @@ def scan_sql_structural(content: str, filepath: str) -> list[dict]:
         if not tbl_m:
             i += 1
             continue
-        # Coleta o bloco da tabela até o ';' de fechamento
         block_start = i
         block_lines = []
         while i < len(lines):
@@ -128,7 +129,7 @@ def scan_sql_structural(content: str, filepath: str) -> list[dict]:
         i += 1
 
         block_text = "\n".join(l for _, l in block_lines)
-        table_has_cnpj_col = bool(_SQL_CNPJ_COL.search(block_text))
+        table_has_main_col = bool(_SQL_CNPJ_COL.search(block_text))
 
         for lineno, bline in block_lines:
             if is_false_positive(bline):
@@ -137,10 +138,8 @@ def scan_sql_structural(content: str, filepath: str) -> list[dict]:
             if not col_m:
                 continue
             col_name = col_m.group(1)
-            # Inclui se: (a) tabela tem coluna cnpj E esta coluna tem alias suspeito
-            # ou (b) nome da coluna bate diretamente com alias conhecido
-            is_alias = bool(_SQL_ALIAS_NAMES.search(col_name))
-            if table_has_cnpj_col or is_alias:
+            is_alias = bool(alias_re.search(col_name))
+            if table_has_main_col or is_alias:
                 matches.append({
                     "linha": lineno,
                     "trecho_codigo": bline.strip()[:200],
@@ -233,9 +232,10 @@ def deduplicate(impacts: list[dict], priority: dict[str, int]) -> list[dict]:
 
 def process_repo(
     repo: str,
-    candidates: list[tuple],       # (filepath, sha, matched_rules)
-    content_map: dict[str, str],    # filepath → content
+    candidates: list[tuple],
+    content_map: dict[str, str],
     priority: dict[str, int],
+    cfg: dict | None = None,
 ) -> list[dict]:
     """Escaneia todos os candidatos e retorna impactos deduplicados com chamadores."""
     raw = []
@@ -264,7 +264,7 @@ def process_repo(
                 ),
                 "_compiled": [],
             }
-            for m in scan_sql_structural(content, filepath):
+            for m in scan_sql_structural(content, filepath, cfg):
                 raw.append({
                     "_rule": _SQL_STRUCT_RULE,
                     "repositorio": repo,
