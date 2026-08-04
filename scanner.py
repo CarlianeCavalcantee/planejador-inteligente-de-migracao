@@ -240,6 +240,12 @@ def _resolve_output_names(args, cfg: dict) -> tuple[str, str, str]:
 # Subcomando: validate-flow
 # ---------------------------------------------------------------------------
 
+def _cmd_migrate(argv: list[str]) -> None:
+    from migrate.cli import main as migrate_main
+    sys.argv = ["cnpj-migrate"] + argv
+    migrate_main()
+
+
 def _cmd_validate_flow(argv: list[str]) -> None:
     import argparse as _ap
 

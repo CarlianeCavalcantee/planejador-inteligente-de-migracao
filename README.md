@@ -300,7 +300,104 @@ python scanner.py validate-flow --repo repos/api-adesao --flow onboarding
 python scanner.py validate-flow --flow onboarding --local repos/
 ```
 
-## Comparação entre scans (`scan_diff`)
+## Migração automática (`migrate`)
+
+Aplica transformações automáticas no código dos repos clonados, alinhando-os à `CnpjUtils` oficial (`br.com.bscash.documento.CnpjUtils`). Complementa o scan respondendo: *"o que posso corrigir automaticamente agora?"*
+
+### Comandos
+
+```bash
+# Detectar ocorrências sem alterar arquivos
+python -m migrate scan repos/
+python -m migrate scan --flow onboarding
+python -m migrate scan --flow onboarding --json
+
+# Aplicar transformações (--dry-run simula sem escrever)
+python -m migrate fix repos/ --dry-run
+python -m migrate fix repos/
+python -m migrate fix --flow onboarding --dry-run
+python -m migrate fix --flow onboarding
+
+# Gerar relatório Markdown + HTML
+python -m migrate report repos/ --html
+python -m migrate report --flow onboarding --html
+
+# Modo CI: exit 1 se houver ocorrências não migradas
+python -m migrate check repos/
+python -m migrate check --flow onboarding
+
+# Rodar testes dos repos após o fix
+python -m migrate validate repos/
+
+# Histórico de execuções
+python -m migrate history
+```
+
+O `--flow` usa os fluxos definidos em `flows:` no `scanner-config.yaml` — os mesmos usados pelo `validate-flow`.
+
+### Regras implementadas (`migrate/rules.yaml`)
+
+| ID | Linguagem | O que transforma | Confiança |
+|----|-----------|------------------|-----------|
+| RM-001 | Java | `replaceAll("[^0-9]","")` / `replaceAll("[^A-Z0-9]","")` → `CnpjUtils.removeMascara()` | auto |
+| RM-002 | TS/JS | `.replace(/\D/g,'')` → `CnpjUtils.removeMascara()` | review |
+| RM-003 | Java | `.replace(".","").replace("/","").replace("-","")` → `CnpjUtils.removeMascara()` | auto |
+| RM-004 | Java | `replaceAll("[^A-Z0-9]","")` em qualquer variável | review |
+| RX-003 | Java | `"[0-9]{14}"` → `"[A-Z0-9]{14}"` | auto |
+| RX-004 | Java | `"\d{14}"` → `"[A-Z0-9]{14}"` | auto |
+| RX-005 | TS/JS | `/[0-9]{14}/` → `/[A-Z0-9]{14}/` | auto |
+| RX-006 | TS/JS | `/\d{14}/` → `/[A-Z0-9]{14}/` | auto |
+| FMT-001 | Java | `CNPJ_FORMATADOR.matcher().replaceAll()` → `CnpjUtils.formataCnpj()` | review |
+| FMT-002 | Java | `formataCNPJ()` / `maskCNPJ()` → `CnpjUtils.formataCnpj()` | auto |
+| VAL-001a/b | Java | `CNPJ_*_MASCARA.matcher().matches()` → `CnpjUtils.estaFormatado()` | review |
+| VAL-002 | Java | `unmaskCnpj()` → `CnpjUtils.removeMascara()` | auto |
+| VAL-003 | Java | `@Pattern(regexp="\d{14}")` → `[A-Z0-9]{14}` | review |
+| VAL-004 | Java | `@CNPJ` (Hibernate Validator numérico) | review |
+| SQL-001 | SQL | `VARCHAR(14)` / `CHAR(14)` → `VARCHAR(20)` | review |
+| SQL-002 | SQL | `NUMBER(14)` / `BIGINT(14)` → `VARCHAR(20)` | review |
+| JPA-001 | Java | `@Column(length=1x)` em campo CNPJ/documento | review |
+| JPA-002 | Java | `@Size(max=14)` → `@Size(max=20)` | review |
+| OAS-001 | any | OpenAPI `pattern: \d{14}` → `[A-Z0-9]{14}` | review |
+| OAS-002 | any | OpenAPI `maxLength: 14` → `20` | review |
+| LEN-001 | Java | `.length() == 14` em variável CNPJ-like | review |
+| LEN-002 | TS/JS | `.length === 14` em variável CNPJ-like | review |
+| SUB-001 | Java | `cnpj.substring(x, y)` posicional | review |
+| SUB-002 | TS/JS | `cnpj.substring()`/`slice()` posicional | review |
+| MASK-001 | any | Máscara literal `"00.000.000/0000-00"` | review |
+
+Regras `auto` são aplicadas diretamente. Regras `review` aparecem no relatório mas não alteram o arquivo — requerem confirmação humana.
+
+### Falsos positivos
+
+O migrador descarta automaticamente linhas que não representam risco real:
+
+- Comentários e imports
+- Propagação pura: `return cnpj;`, `this.cnpj = cnpj;`, `dto.setCnpj(cnpj);`, declarações de campo
+- Campos CNPJ-like sem operação incompatível (ex: `log.info("cnpj={}", cnpj)`)
+
+### Fluxo de trabalho típico
+
+```bash
+# 1. Descobrir impactos
+python scanner.py --local repos/ -r api-adesao
+
+# 2. Ver o que o migrate consegue corrigir automaticamente
+python -m migrate scan --flow onboarding
+
+# 3. Simular as correções
+python -m migrate fix --flow onboarding --dry-run
+
+# 4. Aplicar
+python -m migrate fix --flow onboarding
+
+# 5. Rodar testes
+python -m migrate validate repos/
+
+# 6. Validar compatibilidade
+python scanner.py validate-flow --flow onboarding --local repos/
+```
+
+
 
 ```bash
 # Compara dois JSONs e exibe resumo no terminal
@@ -400,6 +497,7 @@ make test-cov
 | `core/config.py` | `tests/test_config.py` | compilação de regras, regex inválido ignorado, prioridade de área, load_config |
 | `core/engine.py` | `tests/test_engine.py` | false positives, scan_file, scan_sql_structural, deduplicate, process_repo |
 | `core/output.py` | `tests/test_output.py` | _calc_prioridade, build_output (estrutura, contagem, IDs, rollback), generate_markdown |
+| `migrate/` | `tests/test_migrate_rules.py` | regras auto/review, falsos positivos, detecção de true positives, sanidade de patterns |
 
 ## Makefile
 
@@ -450,6 +548,16 @@ scanner/
 │       ├── dependencies.py
 │       ├── metrics.py
 │       └── models.py
+├── migrate/
+│   ├── cli.py              # Entry point: scan, fix, report, check, validate, history
+│   ├── transformer.py      # Motor de transformação + filtro de falsos positivos
+│   ├── rules.yaml          # Regras declarativas alinhadas à CnpjUtils
+│   ├── scanner_bridge.py   # Integração com JSON do scanner + suporte a flows
+│   ├── git_guard.py        # Verifica working tree limpa antes do fix
+│   ├── validator.py        # Executa testes dos repos após o fix
+│   ├── history.py          # Histórico de execuções (JSONL)
+│   ├── report_html.py      # Relatório HTML do migrate
+│   └── transformers/       # Plugins por linguagem (Java, SQL, TypeScript)
 ├── reports/
 │   ├── dashboard.py            # Dashboard HTML interativo
 │   ├── generate_docx.py        # Exportação para Word (.docx)
@@ -464,6 +572,7 @@ scanner/
 │   ├── test_cache.py
 │   ├── test_config.py
 │   ├── test_engine.py
+│   ├── test_migrate_rules.py
 │   └── test_output.py
 └── tools/                      # Utilitários de análise e cobertura
 ```

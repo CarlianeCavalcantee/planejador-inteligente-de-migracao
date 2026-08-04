@@ -74,3 +74,11 @@ Thumbs.db
 tools/_tmp*
 tools/_patch_*.py
 tools/_inspect.py
+
+# Outputs do migrate
+migration_report*.md
+migration_report*.html
+migrate_history.jsonl
+_val003_*.txt
+_fix*.py
+_debug*.py
