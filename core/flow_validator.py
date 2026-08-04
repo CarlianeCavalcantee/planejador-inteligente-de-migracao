@@ -259,6 +259,7 @@ def validate_flow_local(
     cfg: dict,
 ) -> "FlowValidationResult | None":
     """Re-escaneia os repos do fluxo (definidos no config) localmente e valida."""
+    import os
     from core.flow import get_flows
     from core.engine import process_repo
     from core.local_client import scan_repo_local
@@ -274,15 +275,34 @@ def validate_flow_local(
     priority = area_priority(cfg)
     all_impacts: list[dict] = []
 
+    # Suporte a --local apontando direto para um repo único:
+    # se local_dir não contém subdiretórios com os nomes dos repos,
+    # mas é ele próprio um dos repos, usa o diretório pai.
+    resolved_dir = local_dir
+    if flow_repos:
+        first = flow_repos[0]
+        if not os.path.isdir(os.path.join(local_dir, first)):
+            # Tenta: o próprio local_dir é o repo
+            basename = os.path.basename(os.path.normpath(local_dir))
+            if basename in flow_repos and os.path.isdir(local_dir):
+                resolved_dir = os.path.dirname(os.path.normpath(local_dir)) or "."
+            else:
+                print(f"Aviso: nenhum repo do fluxo encontrado em '{local_dir}'.")
+                print(f"Repos esperados: {', '.join(flow_repos)}")
+
     for repo in flow_repos:
+        repo_dir = os.path.join(resolved_dir, repo)
+        if not os.path.isdir(repo_dir):
+            print(f"{repo}: diretório não encontrado em {resolved_dir}")
+            continue
         try:
             candidates, content_map = scan_repo_local(
-                repo, local_dir, cfg["ignore_paths"], cfg["regras"],
+                repo, resolved_dir, cfg["ignore_paths"], cfg["regras"],
                 include_large=False, bridge=None,
             )
             all_impacts.extend(process_repo(repo, candidates, content_map, priority, cfg))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"{repo}: erro ao escanear — {e}")
 
     return _build_result(flow_id, flow_name, flow_repos, all_impacts, cfg)
 

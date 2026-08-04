@@ -372,7 +372,9 @@ def process_repo(
 
     impacts = deduplicate(raw, priority)
 
-    all_content = "\n".join(content_map.values())
+    # Limita all_content a 5 MB para evitar regex lenta em repos grandes
+    _MAX_CONTENT = 5_000_000
+    all_content = "\n".join(content_map.values())[:_MAX_CONTENT]
     for imp in impacts:
         trecho = imp["match"]["trecho_codigo"]
         callers = count_callers(all_content, trecho, imp["filepath"])
