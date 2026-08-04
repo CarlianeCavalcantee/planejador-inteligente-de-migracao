@@ -156,11 +156,12 @@ async def list_org_repos(org: str) -> list[str]:
         return sorted(repos)
 
 
-async def get_repo_tree(session: aiohttp.ClientSession, org: str, repo: str) -> list[dict]:
-    meta = await _get(session, f"{GITHUB_API}/repos/{org}/{repo}")
-    if not meta:
-        return []
-    branch = meta.get("default_branch", "main")
+async def get_repo_tree(session: aiohttp.ClientSession, org: str, repo: str, branch: str | None = None) -> list[dict]:
+    if not branch:
+        meta = await _get(session, f"{GITHUB_API}/repos/{org}/{repo}")
+        if not meta:
+            return []
+        branch = meta.get("default_branch", "main")
     tree = await _get(session, f"{GITHUB_API}/repos/{org}/{repo}/git/trees/{branch}?recursive=1")
     if not tree:
         return []
@@ -337,8 +338,9 @@ async def _search_batch(
     batch_idx: int = 0,
     total_batches: int = 1,
     bridge=None,
+    repo_qualifier: str | None = None,
 ) -> set[str]:
-    q = " OR ".join(terms) + f" repo:{org}/{repo}"
+    q = " OR ".join(terms) + f" repo:{repo_qualifier or f'{org}/{repo}'}"
     paths, page = set(), 1
     if bridge:
         bridge.repo_search_progress(repo, batch_idx + 1, total_batches, terms[0])
@@ -380,12 +382,13 @@ async def search_cnpj_files(
     repo: str,
     search_sem: asyncio.Semaphore,
     bridge=None,
+    repo_qualifier: str | None = None,
 ) -> set[str]:
     paths: set[str] = set()
     batches = _make_batches(_get_all_terms())
     log.info("%s: %d termos → %d batches de search", repo, len(_get_all_terms()), len(batches))
     for i, batch in enumerate(batches):
-        extra = await _search_batch(session, org, repo, batch, search_sem, i, len(batches), bridge=bridge)
+        extra = await _search_batch(session, org, repo, batch, search_sem, i, len(batches), bridge=bridge, repo_qualifier=repo_qualifier)
         new = extra - paths
         if new:
             log.info("%s: +%d arquivo(s) via batch %s", repo, len(new), batch[:2])
@@ -592,6 +595,7 @@ async def scan_repo_data(
     disk_cache: dict,
     include_large: bool = False,
     scan_aliases: bool = False,
+    branch: str | None = None,
     bridge=None,
 ) -> tuple[list[tuple], dict[str, str]]:
     """
@@ -606,7 +610,7 @@ async def scan_repo_data(
     try:
         async with aiohttp.ClientSession(headers=headers) as session:
             # Busca tree primeiro — evita gastar slots de Search em repos vazios
-            tree = await get_repo_tree(session, org, repo)
+            tree = await get_repo_tree(session, org, repo, branch=branch)
             if not tree:
                 return [], {}
 
@@ -624,7 +628,8 @@ async def scan_repo_data(
                 log.info("%s: nenhum arquivo com extensão relevante na tree — pulando Search API", repo)
                 return [], {}
 
-            cnpj_paths = await search_cnpj_files(session, org, repo, search_sem, bridge=bridge)
+            repo_qualifier = f"{org}/{repo}" + (f" ref:{branch}" if branch else "")
+            cnpj_paths = await search_cnpj_files(session, org, repo, search_sem, bridge=bridge, repo_qualifier=repo_qualifier)
 
             # Se Search retornou zero resultados mas a tree tem arquivos relevantes,
             # é provável throttle total (total_count=0 silencioso) — fallback via tree

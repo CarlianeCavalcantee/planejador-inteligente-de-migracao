@@ -30,7 +30,7 @@ def _run(cmd: list[str], cwd: str | None = None) -> tuple[int, str]:
     return result.returncode, (result.stdout + result.stderr).strip()
 
 
-def clone_or_update(repo: str, org: str, token: str, repos_dir: str, update: bool) -> bool:
+def clone_or_update(repo: str, org: str, token: str, repos_dir: str, update: bool, branch: str | None = None) -> bool:
     dest = os.path.join(repos_dir, repo)
     url = f"https://{token}@github.com/{org}/{repo}.git"
 
@@ -43,7 +43,11 @@ def clone_or_update(repo: str, org: str, token: str, repos_dir: str, update: boo
     else:
         log.info("%-40s clonando...", repo)
         os.makedirs(repos_dir, exist_ok=True)
-        code, out = _run(["git", "clone", "--depth=1", "--single-branch", url, dest])
+        cmd = ["git", "clone", "--depth=1", "--single-branch"]
+        if branch:
+            cmd += ["--branch", branch]
+        cmd += [url, dest]
+        code, out = _run(cmd)
 
     if code != 0:
         log.error("%-40s ERRO: %s", repo, out[:200])
@@ -51,13 +55,13 @@ def clone_or_update(repo: str, org: str, token: str, repos_dir: str, update: boo
     return True
 
 
-async def _clone_all(repos: list[str], org: str, token: str, repos_dir: str, update: bool, concurrency: int) -> None:
+async def _clone_all(repos: list[str], org: str, token: str, repos_dir: str, update: bool, concurrency: int, branch: str | None = None) -> None:
     sem = asyncio.Semaphore(concurrency)
     loop = asyncio.get_event_loop()
 
     async def _task(repo: str) -> None:
         async with sem:
-            await loop.run_in_executor(None, clone_or_update, repo, org, token, repos_dir, update)
+            await loop.run_in_executor(None, clone_or_update, repo, org, token, repos_dir, update, branch)
 
     await asyncio.gather(*[_task(r) for r in repos])
 
@@ -69,6 +73,7 @@ def main() -> None:
     p.add_argument("-r", "--repos", nargs="+", help="Repos específicos")
     p.add_argument("-d", "--dir", default=DEFAULT_REPOS_DIR, help=f"Diretório de destino (padrão: {DEFAULT_REPOS_DIR})")
     p.add_argument("--update", action="store_true", help="Faz git pull nos repos já clonados")
+    p.add_argument("--branch", metavar="BRANCH", help="Branch específica a clonar (padrão: branch default do repo)")
     p.add_argument("--concurrency", type=int, default=8, help="Clones em paralelo (padrão: 8)")
     args = p.parse_args()
 
@@ -96,7 +101,7 @@ def main() -> None:
         log.info("%d repos encontrados na org '%s'", len(repos), org)
 
     log.info("Clonando %d repos em '%s' (concorrência: %d)...", len(repos), args.dir, args.concurrency)
-    asyncio.run(_clone_all(repos, org, token, args.dir, args.update, args.concurrency))
+    asyncio.run(_clone_all(repos, org, token, args.dir, args.update, args.concurrency, branch=args.branch))
 
     # Resumo
     clonados = sum(1 for r in repos if os.path.isdir(os.path.join(args.dir, r, ".git")))

@@ -11,58 +11,120 @@ from core.config import DUAL_COMPAT_RES, get_sql_alias_columns, FALSE_POSITIVE_R
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Falsos positivos estruturais — padrões que o regex de regra acerta mas
-# que NÃO representam risco real de migração
+# Campos sensíveis ao domínio do documento
 # ---------------------------------------------------------------------------
 
-_FP_NUMERIC_CONST = re.compile(
-    r"(?i)(static\s+final|const|val|let|var)\s+\w*cnpj\w*\s*=\s*\d"
-)
-_FP_UI_LABEL = re.compile(
-    r'(?i)["\']\s*(cpf[/\\]?cnpj|cnpj\s+do|cnpj:\s|campo\s+cnpj|preencher\s+com\s+cnpj)["\']'
-)
-_FP_CLASS_DECL_ONLY = re.compile(
-    r"(?i)^\s*(public|private|protected|abstract|final)?\s*(class|interface|enum)\s+\w*[Cc]npj\w*\s*(extends\s+\w+|implements\s+[\w,\s]+)?\s*\{?\s*$"
-)
-_FP_BUFFER_PROP_ORDER = re.compile(
-    r'(?i)@Buffer\s*\(.*propOrder\s*=\s*\{[^}]*cnpj[^}]*\}'
-)
-_FP_TRIVIAL_ACCESSOR = re.compile(
-    r"(?i)^\s*(return\s+this\.cnpj\s*;|this\.cnpj\s*=\s*cnpj\s*;)\s*$"
-)
-_FP_COLUMN_NAME_ONLY = re.compile(
-    r'(?i)@Column\s*\(\s*name\s*=\s*["\'][^"\']*(cnpj)[^"\']* ["\']\s*\)\s*$'
-)
-_FP_MASK_LITERAL_COMMENT = re.compile(
-    r"(?i)^\s*(/[/*]|\*|#|<!--).{0,80}9{2}\.9{3}\.9{3}/9{4}-9{2}"
-)
-_FP_LOG_STATEMENT = re.compile(
-    r"(?i)(log|logger|logging|console|print|println|printf|System\.out)\s*[.(].{0,60}cnpj"
-)
-_FP_GETTER_SETTER = re.compile(
-    r"(?i)^\s*(get|set)[Cc]npj\s*\("
+_SENSITIVE_FIELD = re.compile(
+    r"(?i)\b(cnpj|cpfCnpj|cpf_cnpj|taxId|tax_id|federalId|federal_id"
+    r"|docNumber|doc_number|nrDoc|nr_doc|numDoc|num_doc"
+    r"|documentoFederal|documento_federal|nrDocumento|nr_documento"
+    r"|corporateId|corporate_id|companyId|company_id|registrationNumber|registration_number"
+    r"|documento|empresa|company)\b"
 )
 
-_STRUCTURAL_FP = [
-    _FP_NUMERIC_CONST,
-    _FP_UI_LABEL,
-    _FP_CLASS_DECL_ONLY,
-    _FP_BUFFER_PROP_ORDER,
-    _FP_TRIVIAL_ACCESSOR,
-    _FP_COLUMN_NAME_ONLY,
-    _FP_MASK_LITERAL_COMMENT,
-    _FP_LOG_STATEMENT,
-    _FP_GETTER_SETTER,
-]
+# ---------------------------------------------------------------------------
+# Operações que realmente dependem do formato do documento
+# (qualquer uma dessas na linha → pode ser impacto real)
+# ---------------------------------------------------------------------------
+
+_RELEVANT_OP = re.compile(
+    r"(?i)("
+    # manipulação de string
+    r"\.replaceAll\s*\(|\.replace\s*\(|\.replaceFirst\s*\("
+    r"|\.substring\s*\(|\.substr\s*\(|\.slice\s*\(|\.charAt\s*\("
+    r"|\.startsWith\s*\(|\.endsWith\s*\(|\.contains\s*\(|\.indexOf\s*\("
+    r"|\.matches\s*\("
+    r"|\.length\s*\(\s*\)\s*[=!<>]|\.length\s*[=!<>]"
+    r"|\.size\s*\(\s*\)\s*[=!<>]|\.size\s*[=!<>]"
+    r"|\.len\s*[=!<>]|\blength\s*[=!<>]|\bsize\s*[=!<>]"
+    # conversão numérica
+    r"|Long\.parseLong|Integer\.parseInt"
+    r"|BigInteger\s*\(|BigDecimal\s*\("
+    r"|\btoLong\s*\(|\btoInt\s*\(|\bparseInt\s*\(|\bparseFloat\s*\(|Number\s*\("
+    # regex / pattern
+    r"|Pattern\.compile|\bcompile\s*\(|new\s+RegExp"
+    r"|/\^?\[0-9\]|/\^?\\d|\\d\{14\}|\[0-9\]\{14\}"
+    # validação
+    r"|(?:validar|validate|check|calcular)(?:Cnpj|CpfCnpj|Documento|Document)"
+    r"|validarCNPJ|validateCNPJ"
+    r"|isCpf\b|isCnpj\b"
+    r"|CpfCnpjValidator|CnpjValidator|DocumentoUtils"
+    r"|@IsCNPJ|@ValidateCNPJ|@CnpjValid"
+    r"|@Pattern\s*\(|@Digits\b|@Size\s*\(|@Min\s*\(|@Max\s*\(|@Positive\b"
+    # formatação / máscara
+    r"|formataCNPJ|formatarCNPJ|maskCNPJ|unmaskCnpj|formatCNPJ|formatCpfCnpj"
+    r"|String\.format\s*\("
+    r"|\bpadStart\s*\(|\bpadEnd\s*\(|\blpad\s*\(|\brpad\s*\("
+    r"|StringUtils\.leftPad|StringUtils\.rightPad|CNPJ_FORMATADOR"
+    # remoção de não-dígitos
+    r"|\[\^0-9\]|/\\D/g"
+    r"|onlyNumbers|onlyDigits|digitsOnly|somenteNumeros|apenasNumeros|removeNonDigits"
+    # tipo numérico / DDL
+    r"|\bNUMBER\s*\(|\bBIGINT\s*\(|\bNUMERIC\s*\("
+    r"|VARCHAR\s*\(\s*1[0-9]|CHAR\s*\(\s*14"
+    r"|columnDefinition|CellType\.NUMERIC"
+    # anotações ORM / schema
+    r"|@Column\s*\(|@Convert\s*\(|@JsonDeserialize|@JsonSerialize|@Serializable"
+    # comparação / ordenação
+    r"|compareTo\s*\(|Collections\.sort|\bsortBy\b|\borderBy\b|ORDER\s+BY"
+    # cache / hash / criptografia
+    r"|\bMD5\b|\bSHA256\b|SHA-256|\bSHA1\b|DigestUtils|MessageDigest"
+    r"|cache\.put|cache\.get|cache\.set|redisTemplate|RedisTemplate|@Cacheable"
+    # padding numérico
+    r"|%0?1[0-9]d"
+    # índice posicional fixo
+    r"|\[\s*(?:0|1[0-3]|[2-9])\s*\]"
+    r")"
+)
+
+# Padrões que indicam linha sem operação relevante (propagação pura)
+_PURE_PROPAGATION = re.compile(
+    r"""(?ix)
+    # declaração de campo: private String cnpj;
+    ^\s*(?:private|public|protected|val|var|let|const|readonly)\s+\w+\s+\w+\s*;
+    # return simples: return cnpj; / return this.cnpj;
+    |^\s*return\s+(?:this\.)?\w+\s*;
+    # atribuição simples: this.cnpj = cnpj; / x = y;
+    |^\s*(?:this\.)?\w+\s*=\s*(?:this\.)?\w+\s*;
+    # chamada de getter isolada: empresa.getCnpj() / obj.getDocumento()
+    |^\s*[\w.]+\.get\w+\s*\(\s*\)\s*;
+    # chamada de setter isolada: dto.setCnpj(cnpj);
+    |^\s*[\w.]+\.set\w+\s*\([^)]*\)\s*;
+    # builder fluente: .cnpj(cnpj) / .documento(doc)
+    |^\s*\.\w+\s*\([^)]*\)\s*$
+    # map/json put com getter: map.put("cnpj", x.getCnpj())
+    |^\s*[\w.]+\.put\s*\([^)]*\)\s*;
+    # assinatura de getter/setter
+    |^\s*(?:public|private|protected)?\s*\w+\s+(?:get|set)\w+\s*\(
+    """
+)
+
+
+def _has_relevant_operation(line: str) -> bool:
+    """Retorna True se a linha contém uma operação que depende do formato do documento."""
+    return bool(_RELEVANT_OP.search(line))
+
+
+def _is_pure_propagation(line: str) -> bool:
+    """Retorna True se a linha apenas transporta o valor sem operar sobre ele."""
+    return bool(_PURE_PROPAGATION.match(line))
 
 
 def is_false_positive(line: str) -> bool:
-    """Descarta linhas que são comentários, imports sem contexto ou ruído estrutural."""
-    if not line.strip():
+    """Descarta linhas que não representam risco real de migração."""
+    stripped = line.strip()
+    if not stripped:
         return True
+    # comentários e imports
     if any(pat.match(line) for pat in FALSE_POSITIVE_RES):
         return True
-    return any(pat.search(line) for pat in _STRUCTURAL_FP)
+    # linha contém campo sensível mas nenhuma operação relevante → falso positivo
+    if _SENSITIVE_FIELD.search(line) and not _has_relevant_operation(line):
+        return True
+    # propagação pura (getter/setter/return/atribuição simples)
+    if _is_pure_propagation(line):
+        return True
+    return False
 
 
 def scan_file(content: str, filepath: str, rule: dict) -> list[dict]:

@@ -1,0 +1,53 @@
+Escaneando: repos/api-adesao
+
+====================================================
+  Modo             : scan (dry-run)
+  Projetos         : 4
+  Arquivos         : 522
+  Ocorrencias      : 1
+  Auto corrigidos  : 0
+  Pendentes        : 1
+  Taxa de automacao: 0.0%
+
+  Regra          P    Auto  Revisao  Descricao
+  ----------- ---  ------  -------  ----------------------------
+  JPA-001       75             [!1]  @Column(length=1x) em campo 
+====================================================
+
+{
+  "summary": {
+    "projects": 4,
+    "files_scanned": 522,
+    "files_with_hits": 2,
+    "files_changed": 1,
+    "files_review": 1,
+    "auto_patches": 0,
+    "review_items": 1,
+    "total": 1,
+    "automation_rate": 0.0,
+    "by_rule": {
+      "JPA-001": {
+        "auto": 0,
+        "review": 1
+      }
+    }
+  },
+  "files": [
+    {
+      "filepath": "repos\\api-adesao\\src\\main\\java\\br\\com\\hmti\\pj\\entities\\backoffice\\manager\\Socio.java",
+      "auto": [],
+      "review": [
+        {
+          "line": 31,
+          "rule": "JPA-001",
+          "original": "    @Column(name = \"CpfCnpj\", nullable = false, length = 18)"
+        }
+      ]
+    },
+    {
+      "filepath": "repos\\api-adesao\\src\\main\\resources\\sql\\sql_v4.sql",
+      "auto": [],
+      "review": []
+    }
+  ]
+}

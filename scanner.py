@@ -94,6 +94,7 @@ async def _scan_all(org: str, repos: list[str], cfg: dict, disk_cache: dict,
                     scan_aliases: bool = False,
                     concurrency: int = 4,
                     local_dir: str | None = None,
+                    branch: str | None = None,
                     bridge=None) -> list[dict]:
     priority = area_priority(cfg)
     all_impacts = list(prior_impacts)
@@ -136,6 +137,7 @@ async def _scan_all(org: str, repos: list[str], cfg: dict, disk_cache: dict,
                         disk_cache,
                         include_large=include_large,
                         scan_aliases=scan_aliases,
+                        branch=branch,
                         bridge=bridge,
                     )
                 impacts = process_repo(repo, candidates, content_map, priority, cfg)
@@ -193,6 +195,7 @@ def parse_args():
     p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Nível de log (padrão: INFO)")
     p.add_argument("--no-ui", action="store_true", help="Desativa a TUI e usa saída de texto simples")
     p.add_argument("--local", metavar="DIR", help="Usa repos clonados localmente em DIR em vez da GitHub API")
+    p.add_argument("--branch", metavar="BRANCH", help="Branch a escanear (padrão: branch default do repo; ignorado com --local)")
     return p.parse_args()
 
 
@@ -335,6 +338,7 @@ def main():
                         scan_aliases=args.scan_aliases,
                         concurrency=effective_concurrency,
                         local_dir=None,
+                        branch=args.branch,
                         bridge=_ui_bridge,
                     )
                     cache_mod.save_cache(disk_cache)
@@ -368,6 +372,7 @@ def main():
             scan_aliases=args.scan_aliases,
             concurrency=effective_concurrency,
             local_dir=args.local,
+            branch=args.branch,
             bridge=None,
         )
         cache_mod.save_cache(disk_cache)

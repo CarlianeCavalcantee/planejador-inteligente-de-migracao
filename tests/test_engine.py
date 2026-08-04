@@ -16,6 +16,7 @@ from core.engine import (
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("line", [
+    # comentários e imports
     "// validateCNPJ(cnpj)",
     "/* cnpj check */",
     " * @param cnpj",
@@ -23,6 +24,24 @@ from core.engine import (
     "import com.example.CnpjValidator;",
     "",
     "   ",
+    # propagação pura — sem operação relevante
+    "private String cnpj;",
+    "private String documento;",
+    "return cnpj;",
+    "return this.cnpj;",
+    "return documento;",
+    "this.cnpj = cnpj;",
+    "this.documento = documento;",
+    "dto.setCnpj(cnpj);",
+    "dto.setDocumento(documento);",
+    "empresa.getCnpj();",
+    "cliente.getDocumento();",
+    "map.put(\"cnpj\", empresa.getCnpj());",
+    ".cnpj(cnpj)",
+    ".documento(doc)",
+    "public String getCnpj() {",
+    "public void setCnpj(String cnpj) {",
+    "public String getDocumento() {",
 ])
 def test_is_false_positive_returns_true_for_noise(line):
     assert is_false_positive(line) is True
@@ -31,19 +50,43 @@ def test_is_false_positive_returns_true_for_noise(line):
 @pytest.mark.parametrize("line", [
     'if (!validateCNPJ(cnpj)) throw new Exception("invalid");',
     "cnpj VARCHAR(14) NOT NULL,",
-    'String cnpj = "12345678000195";',
+    "cnpj.replaceAll(\"[^0-9]\", \"\");",
+    "if (cnpj.length() != 14) throw new Exception();",
+    "Long.parseLong(cnpj);",
+    "Pattern.compile(\"^[0-9]{14}$\");",
     "@Column(length=14, name=\"cnpj\")",
+    "cnpj.substring(0, 8);",
 ])
 def test_is_false_positive_returns_false_for_real_code(line):
     assert is_false_positive(line) is False
 
 
-def test_is_false_positive_log_statement():
-    assert is_false_positive('log.info("cnpj: {}", cnpj)') is True
-
-
 def test_is_false_positive_getter():
-    assert is_false_positive("getCnpj()") is True
+    assert is_false_positive("public String getCnpj() {") is True
+
+
+def test_is_false_positive_setter():
+    assert is_false_positive("dto.setDocumento(documento);") is True
+
+
+def test_is_false_positive_field_declaration():
+    assert is_false_positive("private String documento;") is True
+
+
+def test_is_false_positive_return_simple():
+    assert is_false_positive("return this.cnpj;") is True
+
+
+def test_is_false_positive_map_put_getter():
+    assert is_false_positive('map.put("cnpj", empresa.getCnpj());') is True
+
+
+def test_is_false_positive_replace_is_impact():
+    assert is_false_positive('cnpj.replaceAll("[^0-9]", "");') is False
+
+
+def test_is_false_positive_length_check_is_impact():
+    assert is_false_positive("if (cnpj.length() != 14)") is False
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +148,7 @@ def test_scan_sql_structural_detects_known_alias_name():
     sql = """
 CREATE TABLE parceiro (
     id BIGINT PRIMARY KEY,
-    tax_id VARCHAR(20) NOT NULL
+    tax_id VARCHAR(14) NOT NULL
 );
 """
     matches = scan_sql_structural(sql, "parceiro.sql")
