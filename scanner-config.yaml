@@ -344,8 +344,7 @@ flows:
       - swap-rotinas
       - swap-webhook
       - beneficios-webhook
-      - rede-compras-api
-      - cliente-tef
+      - redecompras-api
       - servidor-tef
       - domkee
       - vallia
