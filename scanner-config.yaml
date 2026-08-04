@@ -242,127 +242,218 @@ compatibility_rules:
 # Se vazio, a análise por fluxo é omitida dos relatórios.
 flows:
   onboarding:
-    name: "Onboarding PJ"
+    name: "Abertura de Conta / Onboarding PJ"
     repos:
+      - api-portal
       - api-adesao
-      - BScash-AdesaoPJ-Web
-      - backoffice
-      - backoffice-api
+      - atualizabanco
       - backoffice-rotinas
+      - beneficios-webhook
+      - backoffice
+      - domkee
+      - backoffice-api
+      - api-conta-digital
+      - ms-boleto
+      - ms-negociacao
       - bscash-service-client
-      - hmit-lib
-      - hmit-gateway
-      - caf-rotinas
+      - portal-cliente
+      - swap-rotinas
+      - BScash-AdesaoPJ-Web
+      - vallia
+      - BScobranca-terceiro-web
 
-  pix:
-    name: "PIX"
+  antifraude:
+    name: "Background Check / Antifraude"
     repos:
-      - ms-pix
-      - ms-pix-indireto
-      - pix-lib
-      - pix-rotinas
-      - pix-rotinas-indireto
-      - authorizing-lib
+      - atualizabanco
+      - backoffice
+
+  beneficios:
+    name: "Benefícios"
+    repos:
+      - beneficios-webhook
+      - backoffice-api
       - bscash-service-client
+      - BSadmin-web
 
   boleto:
     name: "Boleto / Cobrança"
     repos:
-      - ms-boleto
-      - bopepo
       - api-cobrancaterceiro
+      - atualizabanco
+      - authorizing-lib
+      - bopepo
+      - backoffice
+      - ms-boleto
+      - ms-negociacao
+      - bscash-service-client
+      - portal-cliente
       - BScobranca-terceiro-web
-      - authorizing-lib
-      - bscash-service-client
 
-  ted:
-    name: "TED / Transferência"
+  cartao:
+    name: "Cartão"
     repos:
-      - ms-ted
-      - authorizing-lib
+      - atualizabanco
+      - ms-cartao
+
+  atendimento:
+    name: "Central de Atendimento"
+    repos:
+      - central-de-atendimento
+
+  mascara_cnpj:
+    name: "Componente de Input / Máscara CNPJ"
+    repos:
+      - hmit-lib
+      - ms-autorizador-bandeira
       - bscash-service-client
+      - sped-efinanceira-client-bscash
+      - BSadmin-web
+      - monorepo-mobile-app
+      - poc-forms
+
+  comprovante:
+    name: "Comprovante de Transação"
+    repos:
+      - portal-cliente
 
   conta:
     name: "Conta Digital"
     repos:
       - api-conta
+      - atualizabanco
+      - backoffice-rotinas
+      - backoffice
       - api-conta-digital
-      - bscash
-      - bscash-app
-      - monorepo-mobile-app
-      - 2.0-monorepo-web
-      - bscash-service-client
+      - ms-arquivo
+      - ms-agendamentos
+      - ms-banco
 
   credito:
     name: "Crédito / CCB / Negociação"
     repos:
+      - authorizing-lib
+      - backoffice-api
       - ms-ccb
       - ms-negociacao
-      - authorizing-lib
       - bscash-service-client
+      - ms-celcoin
 
-  cartao:
-    name: "Cartão"
+  nfse:
+    name: "Emissão NFS-e"
     repos:
-      - ms-cartao
-      - ms-autorizador-bandeira
-      - autorizador-lib
-      - bscash-service-client
-
-  backoffice:
-    name: "Backoffice / Operações"
-    repos:
-      - backoffice
-      - backoffice-api
-      - backoffice-rotinas
-      - BSadmin-web
-      - central-de-atendimento
       - atualizabanco
+      - bscash-service-client
 
-  fiscal:
-    name: "Fiscal / SPED / NFS-e"
+  holerite:
+    name: "Holerite / Remuneracao"
     repos:
-      - efinanceira-api
-      - sped-efinanceira-client-bscash
-      - ms-relatorio
+      - atualizabanco
+      - backoffice-rotinas
+      - api-conta-digital
+      - portal-cliente
+      - 2.0-monorepo-web
+
+  pix:
+    name: "PIX (chave, transferência, favorito)"
+    repos:
+      - api-conta
+      - authorizing-lib
+      - backoffice-api
+      - api-conta-digital
       - ms-arquivo
+      - ms-agendamentos
+      - ms-banco
+      - ms-relatorio
+      - pix-rotinas-indireto
+      - ms-pix-indireto
+      - bscash-service-client
+      - portal-cliente
+      - ms-pix
+      - pix-rotinas
+      - BSadmin-web
+      - monorepo-mobile-app
+      - pix-lib
+
+  darf:
+    name: "Pagamento DARF"
+    repos:
+      - ms-arquivo
+      - ms-agendamentos
+      - ms-banco
+      - portal-cliente
+      - monorepo-mobile-app
 
   portal:
-    name: "Portal / Atendimento"
+    name: "Portal do Cliente"
     repos:
       - api-portal
       - portal-cliente
-      - poc-forms
-      - BScashDocs
 
-  integracoes:
-    name: "Integrações Externas"
+  relatorios:
+    name: "Relatórios / Impressão"
     repos:
-      - ms-celcoin
-      - ms-banco
-      - ms-restsoap
-      - swap-rotinas
-      - swap-webhook
-      - beneficios-webhook
-      - redecompras-api
-      - servidor-tef
+      - backoffice
+      - ms-relatorio
+
+  cnab:
+    name: "Remessa Bancária / CNAB"
+    repos:
+      - atualizabanco
+      - backoffice-rotinas
+      - bopepo
+      - backoffice
       - domkee
+      - ms-arquivo
+      - ms-agendamentos
+      - ms-banco
+
+  saque:
+    name: "Saque Digital"
+    repos:
+      - autorizador-lib
+      - api-conta-digital
+      - redecompras-api
+
+  odontoprev:
+    name: "Saúde Dental / Odontoprev"
+    repos:
+      - atualizabanco
+      - backoffice-rotinas
+      - backoffice-api
+      - api-conta-digital
+      - bscash-service-client
+
+  ted:
+    name: "TED / Transferência"
+    repos:
+      - backoffice-api
+      - api-conta-digital
+      - ms-arquivo
+      - ms-agendamentos
+      - ms-banco
+      - ms-ted
+      - bscash-service-client
+      - portal-cliente
+
+  util_mascara:
+    name: "Utilitário de Máscara/Documento"
+    repos:
+      - authorizing-lib
+
+  validacao_cnpj:
+    name: "Validação de CNPJ (shared)"
+    repos:
+      - monorepo-mobile-app
       - vallia
 
-  agendamentos:
-    name: "Agendamentos / Batch"
+  validacao_contrato:
+    name: "Validação de Contrato"
     repos:
-      - ms-agendamentos
-      - backoffice-rotinas
-      - pix-rotinas
-      - pix-rotinas-indireto
-      - caf-rotinas
-
-  notificacoes:
-    name: "Notificações / E-mail"
-    repos:
-      - email-lib
-      - ms-relatorio
+      - backoffice
+      - backoffice-api
+      - api-conta-digital
+      - portal-cliente
 
 prioridade_area:
 - Segurança/LGPD
