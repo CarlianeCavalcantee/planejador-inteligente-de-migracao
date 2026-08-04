@@ -17,6 +17,20 @@ ado_workitems.csv
 *.checkpoint.json
 .scanner_cache.json
 
+# Relatórios gerados com nomes customizados
+relatorio_*.html
+relatorio_*.md
+relatorio_*.json
+relatorio_*.pdf
+relatorio_*.docx
+impacto_*.html
+impacto_*.md
+impacto_*.json
+impacto_*.pdf
+impacto_*.docx
+ado_*.csv
+diff_*.json
+
 # Outputs gerados (docs/)
 docs/output/
 docs/scans/
