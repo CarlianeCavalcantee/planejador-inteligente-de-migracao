@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 import core.cache as cache_mod
 from core.config import load_config, area_priority, get_checkpoint_file, get_titulo
 from core.engine import process_repo
+from core.flow import repos_for_flow
 from core.github_client import list_org_repos, scan_repo_data, audit_alias_coverage, init_token_pool
 from core.local_client import list_local_repos, scan_repo_local
 from core.output import build_output, generate_markdown
@@ -196,6 +197,7 @@ def parse_args():
     p.add_argument("--no-ui", action="store_true", help="Desativa a TUI e usa saída de texto simples")
     p.add_argument("--local", metavar="DIR", help="Usa repos clonados localmente em DIR em vez da GitHub API")
     p.add_argument("--branch", metavar="BRANCH", help="Branch a escanear (padrão: branch default do repo; ignorado com --local)")
+    p.add_argument("--flow", metavar="FLOW_ID", help="Escaneia apenas os repos do fluxo definido em flows: no config")
     return p.parse_args()
 
 
@@ -234,7 +236,116 @@ def _resolve_output_names(args, cfg: dict) -> tuple[str, str, str]:
 # Main
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Subcomando: validate-flow
+# ---------------------------------------------------------------------------
+
+def _cmd_validate_flow(argv: list[str]) -> None:
+    import argparse as _ap
+
+    p = _ap.ArgumentParser(
+        prog="scanner.py validate-flow",
+        description="Valida se um fluxo/repo esta pronto para CNPJ alfanumerico.",
+    )
+    p.add_argument("-c", "--config", default="scanner-config.yaml")
+    p.add_argument("-r", "--repo", metavar="REPO",
+                   help="Nome do repo (clona da org) ou path local (ex: repos/api-adesao)")
+    p.add_argument("--branch", metavar="BRANCH",
+                   help="Branch a clonar/checar antes de escanear (so com -r)")
+    p.add_argument("--flow", metavar="FLOW_ID",
+                   help="Filtra arquivos do fluxo no modo -r; seleciona repos no modo fluxo completo")
+    p.add_argument("--local", metavar="DIR",
+                   help="Dir com repos clonados para re-scan do fluxo completo")
+    p.add_argument("--scan-json", metavar="FILE",
+                   help="JSON de scan alternativo (modo fluxo sem --local)")
+    args = p.parse_args(argv)
+
+    cfg = load_config(args.config)
+
+    # ── Modo repo: -r fornecido ─────────────────────────────────────────────
+    if args.repo:
+        from core.flow_validator import validate_repo, print_validation_result
+        from core.local_client import scan_repo_local
+
+        repo_path = args.repo
+
+        # Se não é um path existente, trata como nome de repo e clona da org
+        if not os.path.isdir(repo_path):
+            token = os.getenv("GITHUB_TOKEN")
+            if not token:
+                print("GITHUB_TOKEN nao definido — necessario para clonar o repo.")
+                sys.exit(1)
+            org = cfg["github_org"]
+            repos_dir = "repos"
+            repo_name = repo_path  # é só o nome, ex: "authorizing-lib"
+            repo_path = os.path.join(repos_dir, repo_name)
+
+            from scripts.clone_repos import clone_or_update
+            print(f"Clonando {org}/{repo_name}" + (f" @ {args.branch}" if args.branch else "") + "...")
+            ok = clone_or_update(repo_name, org, token, repos_dir,
+                                 update=bool(args.branch), branch=args.branch)
+            if not ok:
+                print(f"Falha ao clonar {repo_name}.")
+                sys.exit(1)
+        elif args.branch:
+            # Path local existente + --branch: faz checkout
+            import subprocess
+            r = subprocess.run(["git", "-C", repo_path, "checkout", args.branch],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                print(f"Falha ao fazer checkout de '{args.branch}': {r.stderr.strip()}")
+                sys.exit(1)
+            print(f"Branch: {args.branch}")
+
+        result = validate_repo(repo_path, cfg, flow_id=args.flow)
+
+        local_dir = os.path.dirname(os.path.normpath(repo_path)) or "."
+        repo_name = os.path.basename(os.path.normpath(repo_path))
+        try:
+            cands, _ = scan_repo_local(repo_name, local_dir, cfg["ignore_paths"], cfg["regras"])
+            files_scanned = len({fp for fp, _, _ in cands})
+        except Exception:
+            files_scanned = 0
+
+        print_validation_result(result, files_scanned=files_scanned)
+        sys.exit(0 if result.status == "APROVADO" else 1)
+
+    # ── Modo fluxo completo: --flow obrigatorio ─────────────────────────────
+    if not args.flow:
+        print("Informe -r <repo> para validar um repositorio, ou --flow <id> para validar um fluxo completo.")
+        sys.exit(1)
+
+    from core.flow_validator import validate_flow_from_json, validate_flow_local, print_validation_result
+
+    if args.local:
+        result = validate_flow_local(args.flow, args.local, cfg)
+    else:
+        scan_file = args.scan_json or cfg.get("output_file", "impacto_cnpj.json")
+        if not os.path.exists(scan_file):
+            print(f"Arquivo de scan nao encontrado: {scan_file}")
+            sys.exit(1)
+        print(f"Usando scan: {scan_file}")
+        with open(scan_file, encoding="utf-8") as f:
+            scan_json = json.load(f)
+        result = validate_flow_from_json(args.flow, scan_json, cfg)
+
+    if result is None:
+        flows = list((cfg.get("flows") or {}).keys())
+        print(f"Fluxo '{args.flow}' nao encontrado no config.")
+        if flows:
+            print(f"Fluxos disponiveis: {', '.join(flows)}")
+        sys.exit(1)
+
+    print_validation_result(result)
+    sys.exit(0 if result.status == "APROVADO" else 1)
+
+
 def main():
+    # Subcomando validate-flow interceptado antes do argparse normal
+    if len(sys.argv) >= 3 and sys.argv[1] == "validate-flow":
+        _cmd_validate_flow(sys.argv[2:])
+        return
+
     args = parse_args()
 
     cfg = load_config(args.config)
@@ -266,6 +377,12 @@ def main():
         except OSError as e:
             log.error("Não foi possível ler %s: %s", args.repos_file, e)
             sys.exit(1)
+    elif args.flow:
+        repos = repos_for_flow(args.flow, cfg)
+        if not repos:
+            log.error("Fluxo '%s' não encontrado ou sem repos no config.", args.flow)
+            sys.exit(1)
+        log.info("Fluxo '%s': %d repos — %s", args.flow, len(repos), repos)
     elif args.repos:
         repos = args.repos
     elif cfg.get("repositorios"):

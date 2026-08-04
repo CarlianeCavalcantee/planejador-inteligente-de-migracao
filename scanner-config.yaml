@@ -237,6 +237,21 @@ compatibility_rules:
   motivo: "Constante interna da CnpjUtils — arquivo da própria lib, não requer migração"
 
 
+# Fluxos de negócio — agrupa repos por domínio para análise de maturidade.
+# Use: python scanner.py --flow onboarding
+# Se vazio, a análise por fluxo é omitida dos relatórios.
+flows:
+  onboarding:
+    name: "Onboarding PJ"
+    repos:
+      - api-adesao
+      - backoffice
+  pix:
+    name: "PIX"
+    repos:
+      - api-pix
+      - ms-pix
+
 prioridade_area:
 - Segurança/LGPD
 - Banco de Dados

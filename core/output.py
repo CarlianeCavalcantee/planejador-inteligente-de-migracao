@@ -11,6 +11,7 @@ from core.config import (
     get_riscos_area, get_criterios_area, get_parceiros_conhecidos,
     get_pontos_cegos, get_tela_keywords, get_secoes_extras, get_titulo,
 )
+from core.flow import build_flow_analysis
 from core.planner import build_plan
 
 
@@ -397,6 +398,7 @@ def build_output(raw_impacts: list[dict], cfg: dict, repos_analisados: list[str]
         "oportunidades_refatoracao": _build_oportunidades_refatoracao(matriz, ordem_migracao),
         "simulation": plan["simulation"],
         "migration_readiness": plan["migration_readiness"],
+        "flows": build_flow_analysis(matriz, cfg),
     }
 
 def _calc_prioridade(complexidade: str, critico: bool) -> str:
@@ -523,6 +525,56 @@ def generate_markdown(output: dict) -> str:
         emoji = {"Alta": "🔴", "Média": "🟡", "Baixa": "🟢"}.get(compl, "⚪")
         lines.append(f"| {emoji} {compl} | {count} |")
     lines.append("")
+
+    # Fluxos de negócio
+    flows = output.get("flows", [])
+    if flows:
+        lines += [
+            "## 🔄 Maturidade por Fluxo de Negócio\n",
+            "> Score = % de ocorrências compatíveis sobre o total detectado no fluxo. "
+            "Fluxos com **Impactos = 0** estão prontos para homologação.\n",
+            "| Fluxo | Score | Compatíveis | Revisão | Impactos | Status |",
+            "|-------|-------|-------------|---------|----------|--------|"]
+        for f in flows:
+            emoji = "✅" if f["impacto"] == 0 and f["revisao"] == 0 else ("⚠️" if f["impacto"] == 0 else "❌")
+            lines.append(
+                f"| {emoji} **{f['name']}** | {f['score']}% "
+                f"| {f['compativel']} | {f['revisao']} | {f['impacto']} "
+                f"| {f['status']} |"
+            )
+        lines.append("")
+
+        for f in flows:
+            lines.append(f"### Fluxo: {f['name']}\n")
+            lines.append(f"> Repos: {', '.join(f'`{r}`' for r in f['repos'])}\n")
+
+            # Matriz repo × status
+            lines += [
+                "| Repositório | Compatíveis | Revisão | Impactos | Total |",
+                "|-------------|-------------|---------|----------|-------|"]
+            for rs in f["repos_summary"]:
+                icon = "✅" if rs["impacto"] == 0 and rs["revisao"] == 0 else ("⚠️" if rs["impacto"] == 0 else "❌")
+                lines.append(
+                    f"| {icon} `{rs['repo']}` "
+                    f"| {rs['compativel']} | {rs['revisao']} | {rs['impacto']} | {rs['total']} |"
+                )
+            lines.append("")
+
+            # Matriz área × status
+            if f["areas"]:
+                lines += [
+                    "| Área | Compatíveis | Revisão | Impactos |",
+                    "|------|-------------|---------|----------|"]
+                for area, counts in sorted(f["areas"].items()):
+                    icon = "✅" if counts.get("impacto", 0) == 0 and counts.get("revisao", 0) == 0 else (
+                        "⚠️" if counts.get("impacto", 0) == 0 else "❌")
+                    lines.append(
+                        f"| {icon} {area} "
+                        f"| {counts.get('compativel', 0)} "
+                        f"| {counts.get('revisao', 0)} "
+                        f"| {counts.get('impacto', 0)} |"
+                    )
+                lines.append("")
 
     # Arquivos críticos — seção mais importante para o time de engenharia
     criticos = output.get("arquivos_criticos", [])

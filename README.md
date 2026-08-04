@@ -198,6 +198,108 @@ Todos os textos dos relatórios são configuráveis. Se ausentes, o scanner usa 
 
 Cada JSON inclui `scan_id` (ex: `20250115_143022`) e `data_execucao` (ISO 8601 BRT) para rastreabilidade entre execuções.
 
+## Validação de fluxo (`validate-flow`)
+
+Verifica se um repositório ou fluxo completo está compatível com CNPJ alfanumérico. Complementa o scan de impacto respondendo: *"as alterações já feitas são suficientes para suportar o novo formato?"*
+
+### Modo repositório — uso durante o desenvolvimento
+
+Escaneia um repo clonado localmente e executa os checks de compatibilidade:
+
+```bash
+# Pelo nome do repo — clona automaticamente da org se ainda não estiver em repos/
+python scanner.py validate-flow -r authorizing-lib --flow boleto
+python scanner.py validate-flow -r api-adesao --flow onboarding
+
+# Em uma branch específica — clona/atualiza na branch antes de escanear
+python scanner.py validate-flow -r authorizing-lib --branch feature/cnpj-alfa --flow boleto
+
+# Pelo path local (repo já clonado em outro lugar)
+python scanner.py validate-flow -r repos/api-adesao --flow onboarding
+python scanner.py validate-flow -r C:\projetos\authorizing-lib --flow boleto
+
+# Sem filtro de fluxo — valida o repo inteiro
+python scanner.py validate-flow -r authorizing-lib
+```
+
+O filtro `--flow` usa o mapeamento `tela_keywords` do config para resolver o nome do fluxo em keywords de caminho (ex: `boleto` → `boleto, cobranca, cobrancaterceiro`). Se o fluxo não tiver mapeamento, usa o próprio nome como filtro.
+
+### Modo fluxo completo — uso antes da homologação
+
+Valida todos os repositórios de um fluxo definido em `flows:` no config:
+
+```bash
+# A partir do JSON de scan já gerado (rápido)
+python scanner.py validate-flow --flow onboarding
+
+# Re-escaneia os repos clonados (mais preciso, não consome rate limit)
+python scanner.py validate-flow --flow onboarding --local repos/
+
+# JSON de scan alternativo
+python scanner.py validate-flow --flow pix --scan-json docs/scans/scan_pix.json
+```
+
+Para usar o modo fluxo, defina os repos em `scanner-config.yaml`:
+
+```yaml
+flows:
+  onboarding:
+    name: "Onboarding PJ"
+    repos:
+      - api-adesao
+      - backoffice
+  boleto:
+    name: "Boleto / Cobrança"
+    repos:
+      - authorizing-lib
+      - ms-cobranca
+```
+
+### Checks executados
+
+| ID | Severidade | Verifica |
+|----|------------|----------|
+| CHK-001 | Crítico | Nenhuma conversão numérica (`parseLong`, `parseInt`) sobre CNPJ |
+| CHK-002 | Crítico | Nenhuma regex exclusivamente numérica (`\d{14}`, `[0-9]{14}`) |
+| CHK-003 | Crítico | Nenhuma remoção de não-dígitos (`replaceAll([^0-9])`, `/\D/g`) |
+| CHK-004 | Revisão | Nenhuma máscara numérica antiga (`99.999.999/9999-99`) |
+| CHK-005 | Crítico | Nenhum padding numérico (`padStart`, `lpad` com `'0'`) |
+| CHK-006 | Revisão | Nenhuma comparação de tamanho fixo (`length == 14`) |
+| CHK-007 | Revisão | Validação compatível presente (`CnpjUtils` ou `[A-Z0-9]{14}`) |
+
+Checks extras podem ser adicionados em `flow_checks:` no config.
+
+### Status de saída
+
+| Status | Condição |
+|--------|----------|
+| `APROVADO` | 0 pendentes, 0 falhas |
+| `QUASE PRONTO` | 0 críticos, score ≥ 90% |
+| `REQUER REVISÃO` | 0 críticos, score < 90% |
+| `REPROVADO` | 1 ou mais checks críticos falharam |
+
+Exit code `0` = APROVADO, `1` = qualquer outro status — permite uso como gate em CI/CD:
+
+```bash
+# Bloqueia o pipeline se o fluxo não estiver aprovado
+python scanner.py validate-flow --repo . --flow onboarding || exit 1
+```
+
+### Fluxo de trabalho típico
+
+```bash
+# 1. Descobrir impactos no repo
+python scanner.py --local repos/ -r api-adesao
+
+# 2. Corrigir o código
+
+# 3. Validar incrementalmente durante o desenvolvimento
+python scanner.py validate-flow --repo repos/api-adesao --flow onboarding
+
+# 4. Antes da homologação, validar o fluxo completo
+python scanner.py validate-flow --flow onboarding --local repos/
+```
+
 ## Comparação entre scans (`scan_diff`)
 
 ```bash
@@ -335,6 +437,8 @@ scanner/
 │   ├── github_client.py        # Client async para GitHub API (Search + Tree + Blob)
 │   ├── local_client.py         # Client para repos clonados localmente
 │   ├── cache.py                # Cache em disco de conteúdo de arquivos
+│   ├── flow.py                 # Análise de maturidade por fluxo de negócio
+│   ├── flow_validator.py       # Gate de qualidade: validate-flow
 │   ├── output.py               # Consolidação de impactos e geração de relatórios
 │   ├── ui.py                   # Interface TUI (Textual)
 │   └── planner/                # Motor de planejamento de migração

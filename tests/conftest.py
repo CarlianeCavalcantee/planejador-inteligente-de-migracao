@@ -56,6 +56,12 @@ def cfg(minimal_rule, db_rule) -> dict:
             "Frontend",
         ],
         "regras": [minimal_rule, db_rule],
+        "rollback_base": [
+            "Backup do banco de dados realizado antes da migration?",
+            "Feature flag ativa para reverter sem novo deploy?",
+            "Monitoramento de erros configurado para alertar em < 5 min?",
+            "Plano de comunicação com stakeholders em caso de rollback definido?",
+        ],
     }
 
 
