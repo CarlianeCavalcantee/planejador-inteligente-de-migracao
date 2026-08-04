@@ -13,10 +13,14 @@ import re
 
 from migrate.transformers.base import LanguagePlugin, PluginResult
 
-# Patterns legados que podem ficar órfãos após a migração
+# Patterns legados (numéricos) que podem ficar órfãos após a migração.
+# NÃO inclui os nomes da CnpjUtils oficial (que são alfanuméricos e ficam na lib).
 _LEGACY_PATTERNS = re.compile(
     r"^\s*private\s+static\s+final\s+Pattern\s+"
-    r"(CNPJ_REMOVE_MASCARA|CNPJ_SEM_MASCARA|CNPJ_COM_MASCARA|CNPJ_FORMATADOR)"
+    r"(CNPJ_REMOVE_MASCARA_LEGADO|CNPJ_SEM_MASCARA_LEGADO|CNPJ_COM_MASCARA_LEGADO"
+    r"|CNPJ_FORMATADOR_LEGADO"
+    r"|CNPJ_PATTERN|CNPJ_REGEX|CNPJ_VALIDATOR|CNPJ_MASK_PATTERN"
+    r"|CNPJ_UNMASK_PATTERN|CNPJ_FORMAT_PATTERN)"
     r"\s*=\s*compile\s*\([^)]+\)\s*;\s*$"
 )
 

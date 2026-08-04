@@ -18,6 +18,11 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None  # type: ignore
+
 
 @dataclass
 class RepoInfo:
@@ -87,3 +92,52 @@ def summary_from_scan(scan_json: str) -> dict:
         "alta":       stats.get("impactos_por_complexidade", {}).get("Alta", 0),
         "areas":      len(stats.get("impactos_por_area", {})),
     }
+
+
+def repos_from_flow(flow_name: str, repos_root: str = "repos", config_path: str = "scanner-config.yaml") -> list[RepoInfo]:
+    """
+    Retorna repos de um fluxo definido em `flows:` no scanner-config.yaml,
+    na ordem em que aparecem no config. Apenas repos com diretório local
+    existente em `repos_root` são incluídos.
+    """
+    cfg_path = Path(config_path)
+    if not cfg_path.exists():
+        raise FileNotFoundError(f"Config não encontrado: {config_path}")
+
+    if _yaml is None:
+        raise ImportError("pyyaml é necessário para ler o config: pip install pyyaml")
+
+    with open(cfg_path, encoding="utf-8") as f:
+        cfg = _yaml.safe_load(f)
+
+    flows: dict = cfg.get("flows", {})
+    if flow_name not in flows:
+        available = ", ".join(flows.keys()) or "(nenhum)"
+        raise ValueError(f"Fluxo '{flow_name}' não encontrado no config. Disponíveis: {available}")
+
+    flow = flows[flow_name]
+    root = Path(repos_root)
+    results: list[RepoInfo] = []
+    for i, repo_name in enumerate(flow.get("repos", []), start=1):
+        repo_path = root / repo_name
+        if not repo_path.is_dir():
+            continue
+        results.append(RepoInfo(
+            name=repo_name,
+            path=str(repo_path),
+            alta=0,
+            total=0,
+            areas=[],
+            priority=i,
+        ))
+    return results
+
+
+def flow_names(config_path: str = "scanner-config.yaml") -> list[str]:
+    """Retorna os nomes dos fluxos definidos no config."""
+    cfg_path = Path(config_path)
+    if not cfg_path.exists() or _yaml is None:
+        return []
+    with open(cfg_path, encoding="utf-8") as f:
+        cfg = _yaml.safe_load(f)
+    return list(cfg.get("flows", {}).keys())

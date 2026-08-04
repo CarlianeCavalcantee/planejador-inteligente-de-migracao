@@ -22,6 +22,87 @@ from migrate.transformers import get_plugin
 
 _RULES_PATH = Path(__file__).parent / "rules.yaml"
 
+# ---------------------------------------------------------------------------
+# Falsos positivos — espelhado de core/engine.py
+# ---------------------------------------------------------------------------
+
+_FP_COMMENT = re.compile(
+    r"^\s*(?://|/\*|\*|#|<!--)"
+)
+_FP_IMPORT = re.compile(
+    r"^\s*import\s"
+)
+
+# Propagação pura: não opera sobre o valor, apenas o transporta
+_PURE_PROPAGATION = re.compile(
+    r"""(?ix)
+    ^\s*(?:private|public|protected|val|var|let|const|readonly)\s+\w+\s+\w+\s*;
+    |^\s*return\s+(?:this\.)?\w+\s*;
+    |^\s*(?:this\.)?\w+\s*=\s*(?:this\.)?\w+\s*;
+    |^\s*[\w.]+\.get\w+\s*\(\s*\)\s*;
+    |^\s*[\w.]+\.set\w+\s*\([^)]*\)\s*;
+    |^\s*\.\w+\s*\([^)]*\)\s*$
+    |^\s*[\w.]+\.put\s*\([^)]*\)\s*;
+    |^\s*(?:public|private|protected)?\s*\w+\s+(?:get|set)\w+\s*\(
+    """
+)
+
+# Campos sensíveis ao domínio do documento
+_SENSITIVE_FIELD = re.compile(
+    r"(?i)"
+    r"(?:\b(cnpj|cpfCnpj|cpf_cnpj|taxId|tax_id|federalId|federal_id"
+    r"|docNumber|doc_number|nrDoc|nr_doc|numDoc|num_doc"
+    r"|documentoFederal|documento_federal|corporateId|corporate_id"
+    r"|companyId|company_id|registrationNumber|registration_number"
+    r"|documento|empresa|company)\b"
+    r"|(?:get|set|is|has|with|find|fetch|load|save|update|build|map|to|from|by)"
+    r"(?:Cnpj|CpfCnpj|Documento|Empresa|Company|TaxId|FederalId|DocNumber"
+    r"|NrDoc|NumDoc|CorporateId|CompanyId|RegistrationNumber)\w*\s*\()"
+)
+
+# Operações claramente incompatíveis com CNPJ alfanumérico
+_INCOMPATIBLE_OP = re.compile(
+    r"(?i)"
+    r"\.replaceAll\s*\(|\.replace\s*\(|\.replaceFirst\s*\("
+    r"|\.substring\s*\(|\.substr\s*\(|\.slice\s*\(|\.charAt\s*\("
+    r"|\.matches\s*\("
+    r"|\.length\s*\(\s*\)\s*[=!<>]|\.length\s*[=!<>]"
+    r"|\bLENGTH\s*\(\s*\w"
+    r"|Long\.parseLong|Integer\.parseInt"
+    r"|BigInteger\s*\(|BigDecimal\s*\("
+    r"|\btoLong\s*\(|\btoInt\s*\(|\bparseInt\s*\(|Number\s*\("
+    r"|Pattern\.compile|\bcompile\s*\(|new\s+RegExp"
+    r"|/\^?\[0-9\]|/\^?\\d|\\d\{14\}|\[0-9\]\{14\}"
+    r"|(?:validar|validate|check|calcular)(?:Cnpj|CpfCnpj|Documento|Document)"
+    r"|validarCNPJ|validateCNPJ|isCpf\b|isCnpj\b"
+    r"|@Pattern\s*\(|@Digits\b|@Size\s*\(|@Min\s*\(|@Max\s*\(|@CNPJ\b"
+    r"|formataCNPJ|formatarCNPJ|maskCNPJ|unmaskCnpj|formatCNPJ"
+    r"|\bpadStart\s*\(|\bpadEnd\s*\(|\blpad\s*\(|\brpad\s*\("
+    r"|StringUtils\.leftPad|StringUtils\.rightPad|CNPJ_FORMATADOR"
+    r"|\[\^0-9\]|/\\D/g"
+    r"|onlyNumbers|onlyDigits|digitsOnly|somenteNumeros|apenasNumeros"
+    r"|\bNUMBER\s*\(|\bBIGINT\s*\(|\bNUMERIC\s*\("
+    r"|VARCHAR\s*\(\s*1[0-9]|CHAR\s*\(\s*14"
+    r"|@Column\s*\(|@Convert\s*\("
+    r"|\bMD5\b|\bSHA256\b|DigestUtils|MessageDigest"
+    r"|maxLength\s*:\s*14|pattern\s*:\s*['\"].*(?:\\d\{14\}|\[0-9\]\{14\})"
+)
+
+
+def _is_false_positive(line: str) -> bool:
+    """Descarta linhas que não representam risco real de migração."""
+    stripped = line.strip()
+    if not stripped:
+        return True
+    if _FP_COMMENT.match(line) or _FP_IMPORT.match(line):
+        return True
+    if _PURE_PROPAGATION.match(line):
+        return True
+    # campo sensível presente mas nenhuma operação incompatível → propagação semântica
+    if _SENSITIVE_FIELD.search(line) and not _INCOMPATIBLE_OP.search(line):
+        return True
+    return False
+
 _EXT_TO_LANG: dict[str, str] = {
     ".java": "java", ".kt": "java",
     ".ts": "ts", ".tsx": "ts", ".js": "js", ".jsx": "js",
@@ -107,7 +188,7 @@ def transform_file(filepath: str, content: str, rules: list[dict] | None = None)
             continue
 
         pattern_str = rule.get("match", "")
-        replace_str = rule.get("replace", "")
+        replace_str = rule.get("replace") or ""
         confidence  = rule.get("confidence", "review")
         rule_id     = rule.get("id", "?")
 
@@ -123,6 +204,8 @@ def transform_file(filepath: str, content: str, rules: list[dict] | None = None)
             continue
 
         for i, line in enumerate(result_lines):
+            if _is_false_positive(line):
+                continue
             if not pat.search(line):
                 continue
 
