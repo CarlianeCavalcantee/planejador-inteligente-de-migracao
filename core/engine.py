@@ -6,7 +6,7 @@ import logging
 import os
 import re
 
-from core.config import DUAL_COMPAT_RES, get_sql_alias_columns, FALSE_POSITIVE_RES
+from core.config import DUAL_COMPAT_RES, get_sql_alias_columns, FALSE_POSITIVE_RES, get_compatibility_rules
 
 log = logging.getLogger(__name__)
 
@@ -15,67 +15,23 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _SENSITIVE_FIELD = re.compile(
-    r"(?i)\b(cnpj|cpfCnpj|cpf_cnpj|taxId|tax_id|federalId|federal_id"
+    r"(?i)"
+    # termos standalone (word boundary)
+    r"(?:\b(cnpj|cpfCnpj|cpf_cnpj|taxId|tax_id|federalId|federal_id"
     r"|docNumber|doc_number|nrDoc|nr_doc|numDoc|num_doc"
     r"|documentoFederal|documento_federal|nrDocumento|nr_documento"
     r"|corporateId|corporate_id|companyId|company_id|registrationNumber|registration_number"
     r"|documento|empresa|company)\b"
+    # termos embutidos em camelCase: getDocumento, setCpfCnpj, getCnpjEmpresa...
+    r"|(?:get|set|is|has|with|find|fetch|load|save|update|build|map|to|from|by)"
+    r"(?:Cnpj|CpfCnpj|Documento|Empresa|Company|TaxId|FederalId|DocNumber"
+    r"|NrDoc|NumDoc|CorporateId|CompanyId|RegistrationNumber)\w*\s*\()"
 )
 
 # ---------------------------------------------------------------------------
 # Operações que realmente dependem do formato do documento
 # (qualquer uma dessas na linha → pode ser impacto real)
 # ---------------------------------------------------------------------------
-
-_RELEVANT_OP = re.compile(
-    r"(?i)("
-    # manipulação de string
-    r"\.replaceAll\s*\(|\.replace\s*\(|\.replaceFirst\s*\("
-    r"|\.substring\s*\(|\.substr\s*\(|\.slice\s*\(|\.charAt\s*\("
-    r"|\.startsWith\s*\(|\.endsWith\s*\(|\.contains\s*\(|\.indexOf\s*\("
-    r"|\.matches\s*\("
-    r"|\.length\s*\(\s*\)\s*[=!<>]|\.length\s*[=!<>]"
-    r"|\.size\s*\(\s*\)\s*[=!<>]|\.size\s*[=!<>]"
-    r"|\.len\s*[=!<>]|\blength\s*[=!<>]|\bsize\s*[=!<>]"
-    # conversão numérica
-    r"|Long\.parseLong|Integer\.parseInt"
-    r"|BigInteger\s*\(|BigDecimal\s*\("
-    r"|\btoLong\s*\(|\btoInt\s*\(|\bparseInt\s*\(|\bparseFloat\s*\(|Number\s*\("
-    # regex / pattern
-    r"|Pattern\.compile|\bcompile\s*\(|new\s+RegExp"
-    r"|/\^?\[0-9\]|/\^?\\d|\\d\{14\}|\[0-9\]\{14\}"
-    # validação
-    r"|(?:validar|validate|check|calcular)(?:Cnpj|CpfCnpj|Documento|Document)"
-    r"|validarCNPJ|validateCNPJ"
-    r"|isCpf\b|isCnpj\b"
-    r"|CpfCnpjValidator|CnpjValidator|DocumentoUtils"
-    r"|@IsCNPJ|@ValidateCNPJ|@CnpjValid"
-    r"|@Pattern\s*\(|@Digits\b|@Size\s*\(|@Min\s*\(|@Max\s*\(|@Positive\b"
-    # formatação / máscara
-    r"|formataCNPJ|formatarCNPJ|maskCNPJ|unmaskCnpj|formatCNPJ|formatCpfCnpj"
-    r"|String\.format\s*\("
-    r"|\bpadStart\s*\(|\bpadEnd\s*\(|\blpad\s*\(|\brpad\s*\("
-    r"|StringUtils\.leftPad|StringUtils\.rightPad|CNPJ_FORMATADOR"
-    # remoção de não-dígitos
-    r"|\[\^0-9\]|/\\D/g"
-    r"|onlyNumbers|onlyDigits|digitsOnly|somenteNumeros|apenasNumeros|removeNonDigits"
-    # tipo numérico / DDL
-    r"|\bNUMBER\s*\(|\bBIGINT\s*\(|\bNUMERIC\s*\("
-    r"|VARCHAR\s*\(\s*1[0-9]|CHAR\s*\(\s*14"
-    r"|columnDefinition|CellType\.NUMERIC"
-    # anotações ORM / schema
-    r"|@Column\s*\(|@Convert\s*\(|@JsonDeserialize|@JsonSerialize|@Serializable"
-    # comparação / ordenação
-    r"|compareTo\s*\(|Collections\.sort|\bsortBy\b|\borderBy\b|ORDER\s+BY"
-    # cache / hash / criptografia
-    r"|\bMD5\b|\bSHA256\b|SHA-256|\bSHA1\b|DigestUtils|MessageDigest"
-    r"|cache\.put|cache\.get|cache\.set|redisTemplate|RedisTemplate|@Cacheable"
-    # padding numérico
-    r"|%0?1[0-9]d"
-    # índice posicional fixo
-    r"|\[\s*(?:0|1[0-3]|[2-9])\s*\]"
-    r")"
-)
 
 # Padrões que indicam linha sem operação relevante (propagação pura)
 _PURE_PROPAGATION = re.compile(
@@ -100,9 +56,82 @@ _PURE_PROPAGATION = re.compile(
 )
 
 
+# Operações que o scanner não consegue concluir sozinho (revisão humana)
+_REVIEW_OP = re.compile(
+    r"(?i)"
+    r"\.length\s*\(\s*\)\s*[=!<>]"
+    r"|\.length\s*[=!<>]"
+    r"|\.size\s*\(\s*\)\s*[=!<>]"
+    r"|\.size\s*[=!<>]"
+    r"|\blength\s*[=!<>]"
+    r"|\bsize\s*[=!<>]"
+    r"|\blen\s*[=!<>]"
+    r"|compareTo\s*\("
+    r"|Collections\.sort"
+    r"|\bsortBy\b|\borderBy\b"
+    r"|ORDER\s+BY"
+    r"|\bcontains\s*\("
+    r"|\bstartsWith\s*\("
+    r"|\bendsWith\s*\("
+    r"|\bindexOf\s*\("
+)
+
+# Operações claramente incompatíveis com CNPJ alfanumérico
+_INCOMPATIBLE_OP = re.compile(
+    r"(?i)"
+    r"\.replaceAll\s*\(|\.replace\s*\(|\.replaceFirst\s*\("
+    r"|\.substring\s*\(|\.substr\s*\(|\.slice\s*\(|\.charAt\s*\("
+    r"|\.matches\s*\("
+    r"|Long\.parseLong|Integer\.parseInt"
+    r"|BigInteger\s*\(|BigDecimal\s*\("
+    r"|\btoLong\s*\(|\btoInt\s*\(|\bparseInt\s*\(|\bparseFloat\s*\(|Number\s*\("
+    r"|Pattern\.compile|\bcompile\s*\(|new\s+RegExp"
+    r"|/\^?\[0-9\]|/\^?\\d|\\d\{14\}|\[0-9\]\{14\}"
+    r"|(?:validar|validate|check|calcular)(?:Cnpj|CpfCnpj|Documento|Document)"
+    r"|validarCNPJ|validateCNPJ"
+    r"|isCpf\b|isCnpj\b"
+    r"|CpfCnpjValidator|CnpjValidator|DocumentoUtils"
+    r"|@IsCNPJ|@ValidateCNPJ|@CnpjValid"
+    r"|@Pattern\s*\(|@Digits\b|@Size\s*\(|@Min\s*\(|@Max\s*\(|@Positive\b"
+    r"|formataCNPJ|formatarCNPJ|maskCNPJ|unmaskCnpj|formatCNPJ|formatCpfCnpj"
+    r"|String\.format\s*\("
+    r"|\bpadStart\s*\(|\bpadEnd\s*\(|\blpad\s*\(|\brpad\s*\("
+    r"|StringUtils\.leftPad|StringUtils\.rightPad|CNPJ_FORMATADOR"
+    r"|\[\^0-9\]|/\\D/g"
+    r"|onlyNumbers|onlyDigits|digitsOnly|somenteNumeros|apenasNumeros|removeNonDigits"
+    r"|\bNUMBER\s*\(|\bBIGINT\s*\(|\bNUMERIC\s*\("
+    r"|VARCHAR\s*\(\s*1[0-9]|CHAR\s*\(\s*14"
+    r"|columnDefinition|CellType\.NUMERIC"
+    r"|@Column\s*\(|@Convert\s*\(|@JsonDeserialize|@JsonSerialize|@Serializable"
+    r"|\bMD5\b|\bSHA256\b|SHA-256|\bSHA1\b|DigestUtils|MessageDigest"
+    r"|cache\.put|cache\.get|cache\.set|redisTemplate|RedisTemplate|@Cacheable"
+    r"|%0?1[0-9]d"
+    r"|\[\s*(?:0|1[0-3]|[2-9])\s*\]"
+)
+
+
 def _has_relevant_operation(line: str) -> bool:
-    """Retorna True se a linha contém uma operação que depende do formato do documento."""
-    return bool(_RELEVANT_OP.search(line))
+    """Retorna True se a linha contém operação incompatível OU ambígua."""
+    return bool(_INCOMPATIBLE_OP.search(line)) or bool(_REVIEW_OP.search(line))
+
+
+def classify_line(line: str, compat_rules: list[dict]) -> tuple[str, str | None]:
+    """
+    Classifica uma linha em três estados:
+      'compativel' — já usa API adaptada para alfanumérico
+      'impacto'    — operação claramente incompatível
+      'revisao'    — operação ambígua, requer análise humana
+
+    Retorna (status, motivo).
+    """
+    for rule in compat_rules:
+        if rule["_pat"].search(line):
+            return "compativel", rule["motivo"]
+    if _INCOMPATIBLE_OP.search(line):
+        return "impacto", None
+    if _REVIEW_OP.search(line):
+        return "revisao", None
+    return "impacto", None  # bateu na regra do config mas não em op específica
 
 
 def _is_pure_propagation(line: str) -> bool:
@@ -110,7 +139,7 @@ def _is_pure_propagation(line: str) -> bool:
     return bool(_PURE_PROPAGATION.match(line))
 
 
-def is_false_positive(line: str) -> bool:
+def is_false_positive(line: str, compat_rules: list[dict] | None = None) -> bool:
     """Descarta linhas que não representam risco real de migração."""
     stripped = line.strip()
     if not stripped:
@@ -118,28 +147,34 @@ def is_false_positive(line: str) -> bool:
     # comentários e imports
     if any(pat.match(line) for pat in FALSE_POSITIVE_RES):
         return True
-    # linha contém campo sensível mas nenhuma operação relevante → falso positivo
-    if _SENSITIVE_FIELD.search(line) and not _has_relevant_operation(line):
-        return True
-    # propagação pura (getter/setter/return/atribuição simples)
+    # propagação pura estrutural (independe de campo)
     if _is_pure_propagation(line):
         return True
+    # linha contém campo sensível mas nenhuma operação relevante
+    # exceto se já bate em uma compat rule (operação válida do novo formato)
+    if _SENSITIVE_FIELD.search(line) and not _has_relevant_operation(line):
+        if not compat_rules or not any(r["_pat"].search(line) for r in compat_rules):
+            return True
     return False
 
 
-def scan_file(content: str, filepath: str, rule: dict) -> list[dict]:
+def scan_file(content: str, filepath: str, rule: dict, compat_rules: list[dict] | None = None) -> list[dict]:
     """Aplica os padrões pré-compilados da regra linha a linha."""
     compiled = rule.get("_compiled", [])
+    compat_rules = compat_rules or []
     matches = []
     for lineno, line in enumerate(content.splitlines(), start=1):
-        if is_false_positive(line):
+        if is_false_positive(line, compat_rules):
             continue
         for pat in compiled:
             if pat.search(line):
+                status, motivo = classify_line(line, compat_rules)
                 matches.append({
                     "linha": lineno,
                     "trecho_codigo": line.strip()[:200],
                     "pattern_matched": pat.pattern,
+                    "status_migracao": status,
+                    "motivo_status": motivo,
                 })
                 break
     if not matches:
@@ -300,13 +335,14 @@ def process_repo(
     cfg: dict | None = None,
 ) -> list[dict]:
     """Escaneia todos os candidatos e retorna impactos deduplicados com chamadores."""
+    compat_rules = get_compatibility_rules(cfg) if cfg else []
     raw = []
     for filepath, _sha, matched_rules in candidates:
         content = content_map.get(filepath)
         if not content:
             continue
         for rule in matched_rules:
-            for m in scan_file(content, filepath, rule):
+            for m in scan_file(content, filepath, rule, compat_rules):
                 raw.append({
                     "_rule": rule,
                     "repositorio": repo,

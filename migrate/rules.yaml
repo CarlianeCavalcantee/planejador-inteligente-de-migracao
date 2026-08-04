@@ -1,4 +1,10 @@
 # Regras declarativas de transformação para migração CNPJ alfanumérico.
+# Lib oficial: br.com.bscash.documento.CnpjUtils
+#   CnpjUtils.removeMascara(cnpj)  — remove [^A-Z0-9], faz toUpperCase
+#   CnpjUtils.formataCnpj(cnpj)    — aplica máscara XX.XXX.XXX/XXXX-DD
+#   CnpjUtils.estaFormatado(cnpj)  — valida máscara alfanumérica
+#   CnpjUtils.isBlank(cnpj)        — null/empty/blank check
+#
 # match      = regex Python (aplicada linha a linha)
 # replace    = substituição (grupos \1, \2...)
 # priority   = ordem de exibição no relatório (maior = mais importante)
@@ -11,41 +17,41 @@
   language: java
   category: REMOVE_MASK
   priority: 100
-  match: '(?:(?:cnpj|cpfCnpj|cpf_cnpj|taxId|tax_id|documento)[\w.]*)\.replaceAll\s*\(\s*"[^"]*\[\^0-9\][^"]*"\s*,\s*""\s*\)'
-  replace: 'CnpjUtils.removeMask(\1)'
-  add_import: 'import static br.com.bscash.util.CnpjUtils.removeMask;'
+  match: '(?:(?:cnpj|cpfCnpj|cpf_cnpj|taxId|tax_id|documento)[\w.]*)\\.replaceAll\s*\(\s*"[^"]*\[\^0-9\][^"]*"\s*,\s*""\s*\)'
+  replace: 'CnpjUtils.removeMascara(\1)'
+  add_import: 'import br.com.bscash.documento.CnpjUtils;'
   confidence: review
-  description: "replaceAll('[^0-9]','') -> CnpjUtils.removeMask() — restrito a variáveis CNPJ-like"
+  description: "replaceAll('[^0-9]','') -> CnpjUtils.removeMascara()"
   examples:
     - before: 'String clean = cnpj.replaceAll("[^0-9]", "");'
-      after:  'String clean = CnpjUtils.removeMask(cnpj);'
+      after:  'String clean = CnpjUtils.removeMascara(cnpj);'
     - before: 'return value.replaceAll("[^0-9]", "");'
-      after:  'return CnpjUtils.removeMask(value);'
+      after:  'return CnpjUtils.removeMascara(value);'
 
 - id: RM-002
   language: ts
   category: REMOVE_MASK
   priority: 100
   match: '([\w.]+)\.replace\s*\(/\\D/g\s*,\s*[''""]\s*[''""]\s*\)'
-  replace: 'CnpjUtils.removeMask(\1)'
+  replace: 'CnpjUtils.removeMascara(\1)'
   confidence: auto
-  description: ".replace(/\\D/g,'') -> CnpjUtils.removeMask()"
+  description: ".replace(/\\D/g,'') -> CnpjUtils.removeMascara()"
   examples:
     - before: "const clean = cnpj.replace(/\\D/g, '');"
-      after:  "const clean = CnpjUtils.removeMask(cnpj);"
+      after:  "const clean = CnpjUtils.removeMascara(cnpj);"
 
 - id: RM-003
   language: java
   category: REMOVE_MASK
   priority: 95
   match: '([\w.]+)\.replace\s*\(\s*"\."\s*,\s*""\s*\)\.replace\s*\(\s*"/"\s*,\s*""\s*\)\.replace\s*\(\s*"-"\s*,\s*""\s*\)'
-  replace: 'CnpjUtils.removeMask(\1)'
-  add_import: 'import static br.com.bscash.util.CnpjUtils.removeMask;'
+  replace: 'CnpjUtils.removeMascara(\1)'
+  add_import: 'import br.com.bscash.documento.CnpjUtils;'
   confidence: auto
-  description: "chain replace('.').replace('/').replace('-') -> CnpjUtils.removeMask()"
+  description: "chain replace('.').replace('/').replace('-') -> CnpjUtils.removeMascara()"
   examples:
     - before: 'String s = cnpj.replace(".", "").replace("/", "").replace("-", "");'
-      after:  'String s = CnpjUtils.removeMask(cnpj);'
+      after:  'String s = CnpjUtils.removeMascara(cnpj);'
 
 # ─── REGEX ────────────────────────────────────────────────────────────────────
 
@@ -128,30 +134,30 @@
   category: FORMATTER
   priority: 85
   match: '([\w.]+)\s*=\s*CNPJ_FORMATADOR\.matcher\(([\w.]+)\)\.replaceAll\s*\(\s*"\$1\.\$2\.\$3/\$4-\$5"\s*\)'
-  replace: '\1 = CnpjUtils.format(\2)'
-  add_import: 'import static br.com.bscash.util.CnpjUtils.format;'
+  replace: '\1 = CnpjUtils.formataCnpj(\2)'
+  add_import: 'import br.com.bscash.documento.CnpjUtils;'
   confidence: auto
-  description: "CNPJ_FORMATADOR.matcher(x).replaceAll() -> CnpjUtils.format(x)"
+  description: "CNPJ_FORMATADOR.matcher(x).replaceAll() -> CnpjUtils.formataCnpj(x)"
   examples:
     - before: 'result = CNPJ_FORMATADOR.matcher(value).replaceAll("$1.$2.$3/$4-$5");'
-      after:  'result = CnpjUtils.format(value);'
+      after:  'result = CnpjUtils.formataCnpj(value);'
     - before: 'formatted = CNPJ_FORMATADOR.matcher(cnpj).replaceAll("$1.$2.$3/$4-$5");'
-      after:  'formatted = CnpjUtils.format(cnpj);'
+      after:  'formatted = CnpjUtils.formataCnpj(cnpj);'
 
 - id: FMT-002
   language: java
   category: FORMATTER
   priority: 85
   match: '(formataCNPJ|formatarCNPJ|maskCNPJ|aplicaMascaraCNPJ)\s*\(\s*([\w.]+)\s*\)'
-  replace: 'CnpjUtils.format(\2)'
-  add_import: 'import static br.com.bscash.util.CnpjUtils.format;'
+  replace: 'CnpjUtils.formataCnpj(\2)'
+  add_import: 'import br.com.bscash.documento.CnpjUtils;'
   confidence: auto
-  description: "formataCNPJ(x) -> CnpjUtils.format(x)"
+  description: "formataCNPJ(x) -> CnpjUtils.formataCnpj(x)"
   examples:
     - before: 'String f = formataCNPJ(cnpj);'
-      after:  'String f = CnpjUtils.format(cnpj);'
+      after:  'String f = CnpjUtils.formataCnpj(cnpj);'
     - before: 'return maskCNPJ(value);'
-      after:  'return CnpjUtils.format(value);'
+      after:  'return CnpjUtils.formataCnpj(value);'
 
 # ─── VALIDATION ──────────────────────────────────────────────────────────────
 
@@ -160,39 +166,39 @@
   category: VALIDATION
   priority: 85
   match: 'CNPJ_SEM_MASCARA\.matcher\s*\(\s*([\w.]+)\s*\)\.matches\s*\(\s*\)'
-  replace: 'CnpjUtils.isValid(\1)'
-  add_import: 'import static br.com.bscash.util.CnpjUtils.isValid;'
-  confidence: auto
-  description: "CNPJ_SEM_MASCARA.matcher().matches() -> CnpjUtils.isValid() (sem máscara)"
+  replace: 'CnpjUtils.estaFormatado(\1)'
+  add_import: 'import br.com.bscash.documento.CnpjUtils;'
+  confidence: review
+  description: "CNPJ_SEM_MASCARA.matcher().matches() -> CnpjUtils.estaFormatado() — confirmar semântica (sem vs com máscara)"
   examples:
     - before: 'if (CNPJ_SEM_MASCARA.matcher(cnpj).matches()) {'
-      after:  'if (CnpjUtils.isValid(cnpj)) {'
+      after:  'if (CnpjUtils.estaFormatado(cnpj)) {'
 
 - id: VAL-001b
   language: java
   category: VALIDATION
   priority: 85
   match: 'CNPJ_COM_MASCARA\.matcher\s*\(\s*([\w.]+)\s*\)\.matches\s*\(\s*\)'
-  replace: 'CnpjUtils.isFormatted(\1)'
-  add_import: 'import static br.com.bscash.util.CnpjUtils.isFormatted;'
+  replace: 'CnpjUtils.estaFormatado(\1)'
+  add_import: 'import br.com.bscash.documento.CnpjUtils;'
   confidence: auto
-  description: "CNPJ_COM_MASCARA.matcher().matches() -> CnpjUtils.isFormatted() (com máscara)"
+  description: "CNPJ_COM_MASCARA.matcher().matches() -> CnpjUtils.estaFormatado()"
   examples:
     - before: 'boolean ok = CNPJ_COM_MASCARA.matcher(value).matches();'
-      after:  'boolean ok = CnpjUtils.isFormatted(value);'
+      after:  'boolean ok = CnpjUtils.estaFormatado(value);'
 
 - id: VAL-002
   language: java
   category: VALIDATION
   priority: 85
   match: '(unmaskCnpj|cnpjSemFormatacao)\s*\(\s*([\w.]+)\s*\)'
-  replace: 'CnpjUtils.removeMask(\2)'
-  add_import: 'import static br.com.bscash.util.CnpjUtils.removeMask;'
+  replace: 'CnpjUtils.removeMascara(\2)'
+  add_import: 'import br.com.bscash.documento.CnpjUtils;'
   confidence: auto
-  description: "unmaskCnpj(x) -> CnpjUtils.removeMask(x)"
+  description: "unmaskCnpj(x) -> CnpjUtils.removeMascara(x)"
   examples:
     - before: 'String raw = unmaskCnpj(cnpj);'
-      after:  'String raw = CnpjUtils.removeMask(cnpj);'
+      after:  'String raw = CnpjUtils.removeMascara(cnpj);'
 
 # ─── SQL ─────────────────────────────────────────────────────────────────────
 
@@ -232,7 +238,7 @@
   match: '(?i)CHECK\s*\([^)]*\\d\{14\}[^)]*\)'
   replace: null
   confidence: review
-  description: "CHECK constraint numérica com \\d{14} — sintaxe varia por banco (PostgreSQL: ~, Oracle: REGEXP_LIKE, MySQL: REGEXP). Revisar manualmente."
+  description: "CHECK constraint numérica com \\d{14} — sintaxe varia por banco. Revisar manualmente."
   examples:
     - before: "  CHECK (cnpj ~ '\\d{14}')"
       after:  "  -- PostgreSQL: CHECK (cnpj ~ '^[A-Z0-9]{14}$')\n  -- Oracle:     CHECK (REGEXP_LIKE(cnpj, '^[A-Z0-9]{14}$'))\n  -- MySQL:      CHECK (cnpj REGEXP '^[A-Z0-9]{14}$')"
@@ -279,7 +285,7 @@
   language: any
   category: REGEX
   priority: 60
-  match: '(pattern\s*:\s*[''\"])[^''\"]*(\\d\{14\}|[0-9]\{14\})[^''\"]*([''\"])'
+  match: '(pattern\s*:\s*[''""])[^''""]*(\\d\{14\}|[0-9]\{14\})[^''""]*([''""]])'
   replace: '\1[A-Z0-9]{14}\3'
   confidence: review
   description: "OpenAPI pattern \\d{14} -> [A-Z0-9]{14}"
@@ -295,7 +301,7 @@
   match: '(maxLength\s*:\s*)14'
   replace: '\g<1>20'
   confidence: review
-  description: "OpenAPI maxLength: 14 -> 20 — pode afetar CPF, CEP, telefone. Confirmar que o schema representa CNPJ."
+  description: "OpenAPI maxLength: 14 -> 20 — confirmar que o schema representa CNPJ."
   examples:
     - before: '    maxLength: 14'
       after:  '    maxLength: 20'
@@ -310,7 +316,7 @@
   match: '@Pattern\s*\(\s*regexp\s*=\s*"(\^?)\\\\d\{14\}(\$?)"'
   replace: '@Pattern(regexp = "\1[A-Z0-9]{14}\2"'
   confidence: review
-  description: "@Pattern(regexp=\"\\d{14}\") -> [A-Z0-9]{14} (preserva ^ e $)"
+  description: "@Pattern(regexp=\"\\d{14}\") -> [A-Z0-9]{14}"
   examples:
     - before: '@Pattern(regexp = "^\\d{14}$")'
       after:  '@Pattern(regexp = "^[A-Z0-9]{14}$")'
@@ -323,10 +329,10 @@
   match: '@CNPJ'
   replace: null
   confidence: review
-  description: "@CNPJ (Hibernate Validator) valida apenas formato numérico — substituir por validador alfanumérico customizado"
+  description: "@CNPJ (Hibernate Validator) valida apenas formato numérico — substituir por validador alfanumérico"
   examples:
     - before: '@CNPJ'
-      after:  '// TODO: substituir @CNPJ por @ValidCnpjAlfanumerico'
+      after:  '// TODO: substituir @CNPJ por validador alfanumérico'
       confidence: review
 
 - id: LEN-001
@@ -336,7 +342,7 @@
   match: '(?:(?:cnpj|cpfCnpj|cpf_cnpj|taxId|tax_id|documento)[\w.]*)\s*\.\s*length\s*\(\s*\)\s*(?:==|!=|>|<|>=|<=)\s*14'
   replace: null
   confidence: review
-  description: "Verificação .length() == 14 em variável CNPJ-like — revisar para novo tamanho máximo"
+  description: ".length() == 14 em variável CNPJ-like — revisar para novo tamanho"
   examples:
     - before: 'if (cnpj.length() != 14) throw new IllegalArgumentException();'
       after:  '// TODO: revisar tamanho esperado para CNPJ alfanumérico'
@@ -349,7 +355,7 @@
   match: '(?:cnpj|cpfCnpj|taxId|documento)[\w.]*\s*\.\s*length\s*(?:===|!==|==|!=|>|<|>=|<=)\s*14'
   replace: null
   confidence: review
-  description: "Verificação .length === 14 em variável CNPJ-like (JS/TS) — revisar para novo tamanho"
+  description: ".length === 14 em variável CNPJ-like (JS/TS) — revisar"
   examples:
     - before: 'if (cnpj.length === 14) { ... }'
       after:  '// TODO: revisar tamanho esperado para CNPJ alfanumérico'
@@ -362,7 +368,7 @@
   match: '(?i)LENGTH\s*\(\s*\w*(?:cnpj|cpf_cnpj|tax_id|documento)\w*\s*\)\s*(?:=|!=|<>|>|<|>=|<=)\s*14'
   replace: null
   confidence: review
-  description: "LENGTH(cnpj) = 14 em SQL — revisar para novo tamanho"
+  description: "LENGTH(cnpj) = 14 em SQL — revisar"
   examples:
     - before: 'WHERE LENGTH(cnpj) = 14'
       after:  '-- TODO: revisar tamanho esperado para CNPJ alfanumérico'
@@ -375,7 +381,7 @@
   match: '(?:(?:cnpj|cpfCnpj|cpf_cnpj|taxId|tax_id|documento)[\w.]*)\s*\.\s*substring\s*\(\s*\d+\s*,\s*(?:1[0-9]|14)\s*\)'
   replace: null
   confidence: review
-  description: "substring() com índice posicional em variável CNPJ-like — assume formato fixo, revisar"
+  description: "substring() com índice posicional em variável CNPJ-like — assume formato fixo"
   examples:
     - before: 'String raiz = cnpj.substring(0, 8);'
       after:  '// TODO: revisar extração posicional para CNPJ alfanumérico'
@@ -391,7 +397,7 @@
   match: '(?:cnpj|cpfCnpj|taxId|documento)[\w.]*\s*\.\s*(?:substring|slice)\s*\(\s*\d+\s*,\s*(?:1[0-9]|14)\s*\)'
   replace: null
   confidence: review
-  description: "substring()/slice() com índice posicional em variável CNPJ-like (JS/TS) — revisar"
+  description: "substring()/slice() com índice posicional em variável CNPJ-like (JS/TS)"
   examples:
     - before: 'const raiz = cnpj.substring(0, 8);'
       after:  '// TODO: revisar extração posicional para CNPJ alfanumérico'
@@ -404,7 +410,7 @@
   match: '"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}"'
   replace: null
   confidence: review
-  description: "Máscara literal numérica \"00.000.000/0000-00\" — revisar para suportar formato alfanumérico"
+  description: "Máscara literal numérica \"00.000.000/0000-00\" — revisar para suportar alfanumérico"
   examples:
     - before: 'String mask = "00.000.000/0000-00";'
       after:  '// TODO: revisar máscara para CNPJ alfanumérico'

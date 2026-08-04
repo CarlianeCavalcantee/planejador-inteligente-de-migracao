@@ -194,6 +194,49 @@ secoes_extras:
       - ["Consulta Receita Federal", "API pode retornar CNPJ alfanumérico", "Validar resposta da API"]
       - ["KYC / Background Check", "Parceiro pode rejeitar CNPJ alfanumérico", "Alinhar com parceiro de KYC"]
 
+# Regras de compatibilidade — identificam código já adaptado para CNPJ alfanumérico.
+# Quando uma linha bate em uma regra de impacto E em uma dessas regras,
+# o status é 'compativel' em vez de 'impacto'.
+# Baseado na lib oficial: br.com.bscash.documento.CnpjUtils
+compatibility_rules:
+
+# ── Métodos diretos da CnpjUtils ─────────────────────────────────────────────
+- id: COMPAT-001
+  match: 'CnpjUtils\.removeMascara\s*\('
+  motivo: "Utiliza CnpjUtils.removeMascara() — remove máscara aceitando [^A-Z0-9]"
+
+- id: COMPAT-002
+  match: 'CnpjUtils\.formataCnpj\s*\('
+  motivo: "Utiliza CnpjUtils.formataCnpj() — formata para padrão alfanumérico"
+
+- id: COMPAT-003
+  match: 'CnpjUtils\.estaFormatado\s*\('
+  motivo: "Utiliza CnpjUtils.estaFormatado() — valida máscara alfanumérica"
+
+- id: COMPAT-004
+  match: 'CnpjUtils\.isBlank\s*\('
+  motivo: "Utiliza CnpjUtils.isBlank() — utilitário da lib de documento"
+
+# ── Import do package da lib ──────────────────────────────────────────────────
+- id: COMPAT-005
+  match: 'import\s+(?:static\s+)?br\.com\.bscash\.documento\.CnpjUtils'
+  motivo: "Importa br.com.bscash.documento.CnpjUtils — lib oficial do novo formato"
+
+# ── Padrões regex já migrados ─────────────────────────────────────────────────
+- id: COMPAT-006
+  match: '\[A-Z0-9\]\{14\}'
+  motivo: "Regex já aceita letras maiúsculas — padrão alfanumérico [A-Z0-9]{14}"
+
+- id: COMPAT-007
+  match: '\[\^A-Z0-9\]'
+  motivo: "Regex de remoção de máscara já usa [^A-Z0-9] — padrão da CnpjUtils.removeMascara"
+
+# ── Constantes internas da própria CnpjUtils (evita falso impacto no arquivo da lib) ──
+- id: COMPAT-008
+  match: 'CNPJ_REMOVE_MASCARA|CNPJ_SEM_MASCARA|CNPJ_COM_MASCARA|CNPJ_FORMATADOR'
+  motivo: "Constante interna da CnpjUtils — arquivo da própria lib, não requer migração"
+
+
 prioridade_area:
 - Segurança/LGPD
 - Banco de Dados

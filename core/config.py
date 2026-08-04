@@ -50,6 +50,7 @@ def load_config(path: str = "scanner-config.yaml") -> dict:
         cfg = yaml.safe_load(f) if path.endswith((".yaml", ".yml")) else json.load(f)
     _validate_config(cfg, path)
     _compile_rules(cfg)
+    _compile_compatibility_rules(cfg)
     return cfg
 
 
@@ -104,6 +105,26 @@ def get_tela_keywords(cfg: dict) -> list:
     """Retorna lista de [keywords_list, nome_tela] do config, ou [] se não definido."""
     raw = cfg.get("tela_keywords") or []
     return [(entry["keywords"], entry["nome"]) for entry in raw if "keywords" in entry and "nome" in entry]
+
+
+def get_compatibility_rules(cfg: dict) -> list[dict]:
+    """Retorna regras de compatibilidade pré-compiladas."""
+    return cfg.get("_compiled_compat", [])
+
+
+def _compile_compatibility_rules(cfg: dict) -> None:
+    """Pré-compila padrões das regras de compatibilidade."""
+    compiled = []
+    for rule in cfg.get("compatibility_rules", []):
+        try:
+            compiled.append({
+                "id": rule["id"],
+                "motivo": rule.get("motivo", rule["id"]),
+                "_pat": re.compile(rule["match"], re.IGNORECASE),
+            })
+        except re.error as e:
+            log.warning("[config] compatibility_rule %s regex inválido: %s", rule.get("id"), e)
+    cfg["_compiled_compat"] = compiled
 
 
 def get_sql_alias_columns(cfg: dict) -> str | None:

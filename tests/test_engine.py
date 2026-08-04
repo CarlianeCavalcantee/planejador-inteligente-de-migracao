@@ -3,6 +3,7 @@
 import pytest
 
 from core.engine import (
+    classify_line,
     deduplicate,
     is_false_positive,
     process_repo,
@@ -87,6 +88,89 @@ def test_is_false_positive_replace_is_impact():
 
 def test_is_false_positive_length_check_is_impact():
     assert is_false_positive("if (cnpj.length() != 14)") is False
+
+
+# ---------------------------------------------------------------------------
+# classify_line
+# ---------------------------------------------------------------------------
+
+_COMPAT_RULES = [
+    {
+        "id": "COMPAT-001",
+        "motivo": "Utiliza CnpjUtils",
+        "_pat": __import__("re").compile(r"CnpjUtils\.(isValid|removeMask|format)\s*\("),
+    },
+    {
+        "id": "COMPAT-002",
+        "motivo": "Regex alfanumérico",
+        "_pat": __import__("re").compile(r"\[A-Z0-9\]\{14\}"),
+    },
+]
+
+
+@pytest.mark.parametrize("line,expected_status", [
+    # 🔴 impacto — operação claramente incompatível
+    ('cnpj.replaceAll("[^0-9]", "")',        "impacto"),
+    ("Long.parseLong(cnpj)",                 "impacto"),
+    ('cnpj.matches("\\\\d{14}")',             "impacto"),
+    ("cnpj.substring(0, 8)",                 "impacto"),
+    ("@Column(length=14, name=\"cnpj\")",     "impacto"),
+    # 🟢 compatível — já usa API adaptada
+    ("CnpjUtils.isValid(cnpj)",              "compativel"),
+    ("CnpjUtils.removeMask(cnpj)",           "compativel"),
+    ("Pattern.compile(\"[A-Z0-9]{14}\");",   "compativel"),
+    # 🟡 revisão — ambíguo
+    ("if (cnpj.length() != 14)",             "revisao"),
+    ("cnpj.contains(prefix)",                "revisao"),
+    ("cnpj.startsWith(\"00\")",              "revisao"),
+])
+def test_classify_line(line, expected_status):
+    status, _ = classify_line(line, _COMPAT_RULES)
+    assert status == expected_status
+
+
+def test_classify_line_compatible_returns_motivo():
+    status, motivo = classify_line("CnpjUtils.isValid(cnpj)", _COMPAT_RULES)
+    assert status == "compativel"
+    assert motivo == "Utiliza CnpjUtils"
+
+
+def test_classify_line_impacto_motivo_is_none():
+    status, motivo = classify_line('cnpj.replaceAll("[^0-9]", "")', _COMPAT_RULES)
+    assert status == "impacto"
+    assert motivo is None
+
+
+def test_classify_line_revisao_motivo_is_none():
+    status, motivo = classify_line("if (cnpj.length() != 14)", _COMPAT_RULES)
+    assert status == "revisao"
+    assert motivo is None
+
+
+def test_scan_file_includes_status_migracao(minimal_rule):
+    content = 'if (!validateCNPJ(cnpj)) throw new Exception("invalid");'
+    matches = scan_file(content, "Foo.java", minimal_rule, [])
+    assert len(matches) == 1
+    assert matches[0]["status_migracao"] == "impacto"
+    assert "motivo_status" in matches[0]
+
+
+def test_scan_file_compatible_status():
+    import re
+    from core.config import _compile_rules
+    compat = [{"id": "C1", "motivo": "usa CnpjUtils", "_pat": re.compile(r"CnpjUtils\.isValid")}]
+    # Regra que bate em validateCNPJ; linha também usa CnpjUtils.isValid → compat
+    rule = {
+        "id": "X", "area": "Backend", "extensoes": [".java"], "nomes_arquivo": [],
+        "padroes": [r"validateCNPJ|CnpjUtils\.isValid"],
+        "descricao_impacto": "test", "complexidade": "Alta",
+    }
+    _compile_rules({"regras": [rule]})
+    content = "if (!CnpjUtils.isValid(cnpj)) throw new Exception();"
+    matches = scan_file(content, "Foo.java", rule, compat)
+    assert len(matches) == 1
+    assert matches[0]["status_migracao"] == "compativel"
+    assert matches[0]["motivo_status"] == "usa CnpjUtils"
 
 
 # ---------------------------------------------------------------------------
