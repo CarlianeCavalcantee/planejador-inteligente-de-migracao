@@ -245,12 +245,125 @@ flows:
     name: "Onboarding PJ"
     repos:
       - api-adesao
+      - BScash-AdesaoPJ-Web
       - backoffice
+      - backoffice-api
+      - backoffice-rotinas
+      - bscash-service-client
+      - hmit-lib
+      - hmit-gateway
+      - caf-rotinas
+
   pix:
     name: "PIX"
     repos:
-      - api-pix
       - ms-pix
+      - ms-pix-indireto
+      - pix-lib
+      - pix-rotinas
+      - pix-rotinas-indireto
+      - authorizing-lib
+      - bscash-service-client
+
+  boleto:
+    name: "Boleto / Cobrança"
+    repos:
+      - ms-boleto
+      - bopepo
+      - api-cobrancaterceiro
+      - BScobranca-terceiro-web
+      - authorizing-lib
+      - bscash-service-client
+
+  ted:
+    name: "TED / Transferência"
+    repos:
+      - ms-ted
+      - authorizing-lib
+      - bscash-service-client
+
+  conta:
+    name: "Conta Digital"
+    repos:
+      - api-conta
+      - api-conta-digital
+      - bscash
+      - bscash-app
+      - monorepo-mobile-app
+      - 2.0-monorepo-web
+      - bscash-service-client
+
+  credito:
+    name: "Crédito / CCB / Negociação"
+    repos:
+      - ms-ccb
+      - ms-negociacao
+      - authorizing-lib
+      - bscash-service-client
+
+  cartao:
+    name: "Cartão"
+    repos:
+      - ms-cartao
+      - ms-autorizador-bandeira
+      - autorizador-lib
+      - bscash-service-client
+
+  backoffice:
+    name: "Backoffice / Operações"
+    repos:
+      - backoffice
+      - backoffice-api
+      - backoffice-rotinas
+      - BSadmin-web
+      - central-de-atendimento
+      - atualizabanco
+
+  fiscal:
+    name: "Fiscal / SPED / NFS-e"
+    repos:
+      - efinanceira-api
+      - sped-efinanceira-client-bscash
+      - ms-relatorio
+      - ms-arquivo
+
+  portal:
+    name: "Portal / Atendimento"
+    repos:
+      - api-portal
+      - portal-cliente
+      - poc-forms
+      - BScashDocs
+
+  integracoes:
+    name: "Integrações Externas"
+    repos:
+      - ms-celcoin
+      - ms-banco
+      - ms-restsoap
+      - swap-rotinas
+      - swap-webhook
+      - beneficios-webhook
+      - rede-compras-api
+      - cliente-tef
+      - servidor-tef
+      - domkee
+      - vallia
+
+  agendamentos:
+    name: "Agendamentos / Batch"
+    repos:
+      - ms-agendamentos
+      - backoffice-rotinas
+      - pix-rotinas
+      - pix-rotinas-indireto
+      - caf-rotinas
+
+  notificacoes:
+    name: "Notificações / E-mail"
+    repos:
+      - email-lib
+      - ms-relatorio
 
 prioridade_area:
 - Segurança/LGPD
