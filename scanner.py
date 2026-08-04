@@ -268,27 +268,40 @@ def _cmd_validate_flow(argv: list[str]) -> None:
         from core.local_client import scan_repo_local
 
         repo_path = args.repo
+        repos_dir = "repos"
 
-        # Se não é um path existente, trata como nome de repo e clona da org
+        # Resolve o path: se não existe como diretório, tenta repos/<nome>
         if not os.path.isdir(repo_path):
-            token = os.getenv("GITHUB_TOKEN")
-            if not token:
-                print("GITHUB_TOKEN nao definido — necessario para clonar o repo.")
-                sys.exit(1)
-            org = cfg["github_org"]
-            repos_dir = "repos"
-            repo_name = repo_path  # é só o nome, ex: "authorizing-lib"
-            repo_path = os.path.join(repos_dir, repo_name)
-
-            from scripts.clone_repos import clone_or_update
-            print(f"Clonando {org}/{repo_name}" + (f" @ {args.branch}" if args.branch else "") + "...")
-            ok = clone_or_update(repo_name, org, token, repos_dir,
-                                 update=bool(args.branch), branch=args.branch)
-            if not ok:
-                print(f"Falha ao clonar {repo_name}.")
-                sys.exit(1)
+            candidate = os.path.join(repos_dir, repo_path)
+            if os.path.isdir(candidate):
+                # já clonado em repos/ — usa direto, só faz checkout se --branch
+                repo_path = candidate
+                if args.branch:
+                    import subprocess
+                    r = subprocess.run(["git", "-C", repo_path, "checkout", args.branch],
+                                       capture_output=True, text=True)
+                    if r.returncode != 0:
+                        print(f"Falha ao fazer checkout de '{args.branch}': {r.stderr.strip()}")
+                        sys.exit(1)
+                    print(f"Branch: {args.branch}")
+            else:
+                # não existe localmente — clona da org
+                token = os.getenv("GITHUB_TOKEN")
+                if not token:
+                    print("GITHUB_TOKEN nao definido — necessario para clonar o repo.")
+                    sys.exit(1)
+                org = cfg["github_org"]
+                repo_name = repo_path
+                repo_path = os.path.join(repos_dir, repo_name)
+                from scripts.clone_repos import clone_or_update
+                print(f"Clonando {org}/{repo_name}" + (f" @ {args.branch}" if args.branch else "") + "...")
+                ok = clone_or_update(repo_name, org, token, repos_dir,
+                                     update=False, branch=args.branch)
+                if not ok:
+                    print(f"Falha ao clonar {repo_name}.")
+                    sys.exit(1)
         elif args.branch:
-            # Path local existente + --branch: faz checkout
+            # path explícito existente + --branch
             import subprocess
             r = subprocess.run(["git", "-C", repo_path, "checkout", args.branch],
                                capture_output=True, text=True)

@@ -106,6 +106,7 @@ class FlowValidationResult:
     status: str
     critical_failures: int
     review_failures: int
+    pending_impacts: list[dict] = field(default_factory=list)  # impactos pendentes para exibicao
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +223,7 @@ def _build_result(
         status=_compute_status(score, critical_failures, review_failures, pending),
         critical_failures=critical_failures,
         review_failures=review_failures,
+        pending_impacts=[i for i in impacts if _status(i) == "impacto"],
     )
 
 
@@ -397,4 +399,23 @@ def print_validation_result(result: FlowValidationResult, files_scanned: int = 0
         _RED if result.status == "REPROVADO" else _YELLOW
     )
     print(f"\n  Status: {color}{_BOLD}{result.status}{_RESET}")
+
+    # Breakdown de pendentes por area/arquivo (so quando ha pendentes)
+    if result.pending_impacts:
+        print(f"\n{_BOLD}  Pendentes por area{_RESET}")
+        by_area: dict[str, list] = {}
+        for imp in result.pending_impacts:
+            area = imp.get("_rule", {}).get("area") or imp.get("area", "?")
+            by_area.setdefault(area, []).append(imp)
+        for area, items in sorted(by_area.items()):
+            print(f"  {_YELLOW}{area} ({len(items)}){_RESET}")
+            for imp in items[:3]:
+                _, arquivo, linha = _loc(imp)
+                trecho = _trecho(imp)[:80]
+                print(f"    {arquivo}:{linha}")
+                if trecho:
+                    print(f"    {_YELLOW}{trecho}{_RESET}")
+            if len(items) > 3:
+                print(f"    ... +{len(items) - 3} ocorrencia(s)")
+
     print(f"{'─'*w}\n")
