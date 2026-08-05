@@ -2,9 +2,10 @@
 Plugin Java/Kotlin.
 
 Pós-processamento específico:
-  1. Injeta imports solicitados pelas regras logo após o último import existente.
-  2. Remove declarações de Pattern constants que foram substituídas por CnpjUtils
-     e que agora ficaram sem uso (CNPJ_REMOVE_MASCARA, CNPJ_SEM_MASCARA, etc.).
+  1. Troca o import legado da CnpjUtils pelo da DocumentoUtils.
+  2. Injeta imports solicitados pelas regras logo após o último import existente.
+  3. Remove declarações de Pattern constants que foram substituídas por
+     DocumentoUtils e que agora ficaram sem uso (CNPJ_REMOVE_MASCARA, etc.).
 """
 
 from __future__ import annotations
@@ -13,8 +14,14 @@ import re
 
 from migrate.transformers.base import LanguagePlugin, PluginResult
 
+# Import da classe antes da renomeação para br.com.bscash.utils.DocumentoUtils
+_LEGACY_CNPJUTILS_IMPORT = re.compile(
+    r"^(\s*)import\s+(static\s+)?br\.com\.bscash\.documento\.CnpjUtils\s*;\s*$"
+)
+_NEW_DOCUMENTOUTILS_IMPORT = "import br.com.bscash.utils.DocumentoUtils;"
+
 # Patterns legados (numéricos) que podem ficar órfãos após a migração.
-# NÃO inclui os nomes da CnpjUtils oficial (que são alfanuméricos e ficam na lib).
+# NÃO inclui os nomes da DocumentoUtils oficial (que são alfanuméricos e ficam na lib).
 _LEGACY_PATTERNS = re.compile(
     r"^\s*private\s+static\s+final\s+Pattern\s+"
     r"(CNPJ_REMOVE_MASCARA_LEGADO|CNPJ_SEM_MASCARA_LEGADO|CNPJ_COM_MASCARA_LEGADO"
@@ -61,13 +68,32 @@ class JavaPlugin(LanguagePlugin):
         imports_added: list[str] = []
         notes: list[str] = []
 
-        # 1. Injeta imports solicitados pelas regras
+        # 1. Troca o import legado no lugar, desde que nao restem chamadas a CnpjUtils
+        if not re.search(r"\bCnpjUtils\s*\.", content):
+            linhas = content.splitlines(keepends=True)
+            trocadas = 0
+            for i, line in enumerate(linhas):
+                m = _LEGACY_CNPJUTILS_IMPORT.match(line)
+                if not m:
+                    continue
+                quebra = "\n" if line.endswith("\n") else ""
+                linhas[i] = f"{m.group(1)}{_NEW_DOCUMENTOUTILS_IMPORT}{quebra}"
+                trocadas += 1
+            if trocadas:
+                content = "".join(linhas)
+                imports_added.append(_NEW_DOCUMENTOUTILS_IMPORT)
+                notes.append(
+                    "Import 'br.com.bscash.documento.CnpjUtils' substituido por "
+                    "'br.com.bscash.utils.DocumentoUtils' (classe renomeada)."
+                )
+
+        # 2. Injeta imports solicitados pelas regras
         for imp in imports_pending:
             content, added = _inject_import(content, imp)
             if added:
                 imports_added.append(imp)
 
-        # 2. Remove declarações de Pattern legadas que ficaram sem uso
+        # 3. Remove declarações de Pattern legadas que ficaram sem uso
         lines = content.splitlines(keepends=True)
         cleaned: list[str] = []
         removed_patterns: list[str] = []
@@ -81,11 +107,11 @@ class JavaPlugin(LanguagePlugin):
         if removed_patterns:
             content = "".join(cleaned)
             notes.append(
-                f"Pattern constants removidas (substituidas por CnpjUtils): "
+                f"Pattern constants removidas (substituidas por DocumentoUtils): "
                 + ", ".join(removed_patterns)
             )
 
-            # 3. Remove import estático de compile se não há mais usos
+            # 4. Remove import estático de compile se não há mais usos
             if not _uses_pattern_compile(content):
                 content = "".join(
                     l for l in content.splitlines(keepends=True)

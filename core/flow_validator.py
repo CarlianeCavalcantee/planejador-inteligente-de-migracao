@@ -71,10 +71,19 @@ _BUILTIN_CHECKS: list[dict] = [
     },
     {
         "id": "CHK-007",
-        "label": "Validacao compativel presente (CnpjUtils ou [A-Z0-9]{14})",
+        "label": "Validacao compativel presente (DocumentoUtils ou [A-Z0-9]{14})",
         "patterns": [],
         "severity": "review",
         "is_positive": True,
+    },
+    {
+        "id": "CHK-008",
+        "label": "Nenhuma referencia a CnpjUtils (renomeada para DocumentoUtils)",
+        "patterns": [
+            r"\bCnpjUtils\s*\.",
+            r"br\.com\.bscash\.documento\.CnpjUtils",
+        ],
+        "severity": "critical",
     },
 ]
 
@@ -168,11 +177,18 @@ def _check_against_impacts(check: dict, flow_impacts: list[dict]) -> CheckResult
 
 
 def _check_positive(check: dict, flow_impacts: list[dict]) -> CheckResult:
+    """
+    Check positivo (ex: DocumentoUtils presente).
+
+    Só é obrigatório quando há impactos a considerar: sem pontos no
+    fluxo/repo, não há o que migrar — o check não se aplica (passa).
+    """
     compat = [i for i in flow_impacts if _status(i) == "compativel"]
+    passed = len(flow_impacts) == 0 or len(compat) > 0
     return CheckResult(
         id=check["id"],
         label=check["label"],
-        passed=len(compat) > 0,
+        passed=passed,
         severity=check["severity"],
         findings=[],
         is_positive=True,

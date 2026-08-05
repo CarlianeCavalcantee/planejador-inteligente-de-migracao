@@ -25,6 +25,11 @@ ignore_paths:
 - stub.java
 repositorios: []
 
+# Raizes onde procurar clones locais ao usar `validate-flow -r <nome>`.
+# Alem destas, o scanner sempre procura em 'repos/' e no diretorio pai do projeto.
+# Pode ser sobrescrito por --repos-root DIR ou pela env LOCAL_REPOS_DIRS.
+local_repos_dirs: []
+
 sql_alias_columns:
 - documento
 - doc_number
@@ -197,30 +202,36 @@ secoes_extras:
 # Regras de compatibilidade — identificam código já adaptado para CNPJ alfanumérico.
 # Quando uma linha bate em uma regra de impacto E em uma dessas regras,
 # o status é 'compativel' em vez de 'impacto'.
-# Baseado na lib oficial: br.com.bscash.documento.CnpjUtils
+# Baseado na lib oficial: br.com.bscash.utils.DocumentoUtils
+# (antes br.com.bscash.documento.CnpjUtils — a classe foi renomeada; chamadas
+#  remanescentes a CnpjUtils seguem sendo reportadas como pendentes de renomeação)
 compatibility_rules:
 
-# ── Métodos diretos da CnpjUtils ─────────────────────────────────────────────
+# ── Métodos diretos da DocumentoUtils ────────────────────────────────────────
 - id: COMPAT-001
-  match: 'CnpjUtils\.removeMascara\s*\('
-  motivo: "Utiliza CnpjUtils.removeMascara() — remove máscara aceitando [^A-Z0-9]"
+  match: 'DocumentoUtils\.removeMascara\s*\('
+  motivo: "Utiliza DocumentoUtils.removeMascara() — remove máscara aceitando [^A-Z0-9]"
 
 - id: COMPAT-002
-  match: 'CnpjUtils\.formataCnpj\s*\('
-  motivo: "Utiliza CnpjUtils.formataCnpj() — formata para padrão alfanumérico"
+  match: 'DocumentoUtils\.formataCnpj\s*\('
+  motivo: "Utiliza DocumentoUtils.formataCnpj() — formata para padrão alfanumérico"
 
 - id: COMPAT-003
-  match: 'CnpjUtils\.estaFormatado\s*\('
-  motivo: "Utiliza CnpjUtils.estaFormatado() — valida máscara alfanumérica"
+  match: 'DocumentoUtils\.estaFormatado\s*\('
+  motivo: "Utiliza DocumentoUtils.estaFormatado() — valida máscara alfanumérica"
 
 - id: COMPAT-004
-  match: 'CnpjUtils\.isBlank\s*\('
-  motivo: "Utiliza CnpjUtils.isBlank() — utilitário da lib de documento"
+  match: 'DocumentoUtils\.isBlank\s*\('
+  motivo: "Utiliza DocumentoUtils.isBlank() — utilitário da lib de documento"
+
+- id: COMPAT-009
+  match: 'DocumentoUtils\.formataParaTamanhoFixo\s*\('
+  motivo: "Utiliza DocumentoUtils.formataParaTamanhoFixo() — campo de tamanho fixo preservando letras"
 
 # ── Import do package da lib ──────────────────────────────────────────────────
 - id: COMPAT-005
-  match: 'import\s+(?:static\s+)?br\.com\.bscash\.documento\.CnpjUtils'
-  motivo: "Importa br.com.bscash.documento.CnpjUtils — lib oficial do novo formato"
+  match: 'import\s+(?:static\s+)?br\.com\.bscash\.utils\.DocumentoUtils'
+  motivo: "Importa br.com.bscash.utils.DocumentoUtils — lib oficial do novo formato"
 
 # ── Padrões regex já migrados ─────────────────────────────────────────────────
 - id: COMPAT-006
@@ -229,12 +240,21 @@ compatibility_rules:
 
 - id: COMPAT-007
   match: '\[\^A-Z0-9\]'
-  motivo: "Regex de remoção de máscara já usa [^A-Z0-9] — padrão da CnpjUtils.removeMascara"
+  motivo: "Regex de remoção de máscara já usa [^A-Z0-9] — padrão da DocumentoUtils.removeMascara"
 
-# ── Constantes internas da própria CnpjUtils (evita falso impacto no arquivo da lib) ──
+# ── Constantes internas da própria DocumentoUtils (evita falso impacto na lib) ──
 - id: COMPAT-008
   match: 'CNPJ_REMOVE_MASCARA|CNPJ_SEM_MASCARA|CNPJ_COM_MASCARA|CNPJ_FORMATADOR'
-  motivo: "Constante interna da CnpjUtils — arquivo da própria lib, não requer migração"
+  motivo: "Constante interna da DocumentoUtils — arquivo da própria lib, não requer migração"
+
+# ── Wrappers locais já delegando para DocumentoUtils ─────────────────────────
+- id: COMPAT-010
+  match: 'StringHelper\.formatCnpj\s*\('
+  motivo: "StringHelper.formatCnpj() — wrapper legado que delega para DocumentoUtils.formataCnpj"
+
+- id: COMPAT-011
+  match: '(?i)return\s+DocumentoUtils\.formataCnpj\s*\('
+  motivo: "Retorno direto de DocumentoUtils.formataCnpj — formato alfanumérico"
 
 
 # Fluxos de negócio — agrupa repos por domínio para análise de maturidade.
@@ -745,8 +765,10 @@ regras:
   - (?i)@IsCNPJ|@ValidateCNPJ|@CnpjValid|(?<![a-zA-Z])@CNPJ(?![a-zA-Z])
   - (?i)(validar|validate|check|calcular)(Cnpj|CpfCnpj|Documento)|validarCNPJ|validateCNPJ
   - (?i)(formataCNPJ|cnpjSemFormatacao|aplicaMascaraCNPJ|unmaskCnpj|maskCnpj|formataCpfCnpj|unmaskCpfCnpj)
-  - (?i)class\s+\w*(Cnpj|CpfCnpj|Documento)\w*\s*(extends|implements|\{)
-  - (?i)interface\s+\w*(Cnpj|CpfCnpj|Documento)\w*
+  - (?i)class\s+\w*(Cnpj|CpfCnpj)\w*\s*(extends|implements|\{)
+  - (?i)interface\s+\w*(Cnpj|CpfCnpj)\w*
+  - (?i)class\s+DocumentoUtils\b
+  - (?i)interface\s+DocumentoUtils\b
   - (?i)(cnpj|cpfCnpj|cpf_cnpj|documento).{0,10}(replace|replaceAll).{0,30}(\.|/|-)
   - (?i)\\d\{14\}|\^\[0-9\]\{14\}
   - (?i)(cnpj|cpfCnpj|cpf_cnpj|documento).{0,10}(length|size|len)\s*[=!<>]+\s*1[0-9]
@@ -1211,18 +1233,19 @@ regras:
   - .go
   nomes_arquivo: []
   padroes:
-  - (?i)(MongoTemplate|MongoRepository|ReactiveMongoTemplate|ReactiveMongoRepository).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(MongoTemplate|MongoRepository|ReactiveMongoTemplate)
-  - (?i)(Filters\.eq|Filters\.regex|Filters\.in|Filters\.gt|Filters\.lt).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(Filters\.eq|Filters\.regex|Filters\.in|Filters\.gt|Filters\.lt)
-  - (?i)(Criteria\.where|Query\.query|BasicQuery).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(Criteria\.where|Query\.query|BasicQuery)
-  - (?i)(Document|Bson|BsonDocument).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(Document|Bson|BsonDocument)
-  - (?i)(Aggregation\.match|Aggregation\.group|AggregationOperation).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(Aggregation\.match|Aggregation\.group|AggregationOperation)
-  - (?i)@Document.{0,120}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}@Field.{0,30}(mongo|MongoDB)
+  - (?i)(MongoTemplate|MongoRepository|ReactiveMongoTemplate|ReactiveMongoRepository).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(MongoTemplate|MongoRepository|ReactiveMongoTemplate)
+  - (?i)(Filters\.eq|Filters\.regex|Filters\.in|Filters\.gt|Filters\.lt).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(Filters\.eq|Filters\.regex|Filters\.in|Filters\.gt|Filters\.lt)
+  - (?i)(Criteria\.where|Query\.query|BasicQuery).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(Criteria\.where|Query\.query|BasicQuery)
+  # Document/Bson = tipo MongoDB (word boundary). NÃO usar "Document" solto — casa com "Documento" em Java.
+  - (?i)(?:\b(?:org\.bson\.)?Document\b|\bBson\b|\bBsonDocument\b|new\s+Document\b).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(?:\b(?:org\.bson\.)?Document\b|\bBson\b|\bBsonDocument\b)
+  - (?i)(Aggregation\.match|Aggregation\.group|AggregationOperation).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(Aggregation\.match|Aggregation\.group|AggregationOperation)
+  - (?i)@Document\b.{0,120}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}@Field.{0,30}(mongo|MongoDB)
   descricao_impacto: Query ou mapeamento MongoDB referencia CNPJ via Criteria, Filters, Aggregation ou Document. Filtros com regex numérica ou comparações de igualdade quebram com CNPJ alfanumérico.
   complexidade: Alta
 - id: QB-001
@@ -1390,18 +1413,20 @@ regras:
   - mybatis-config.xml
   - sqlmap-config.xml
   padroes:
-  - (?i)(MyBatis|mybatis|@Mapper|@Select|@Insert|@Update|@Delete|SqlSession).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(MyBatis|mybatis|@Mapper|@Select|@Insert|@Update|@Delete|SqlSession)
-  - (?i)(JdbcTemplate|NamedParameterJdbcTemplate|SimpleJdbcInsert|JdbcClient).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(JdbcTemplate|NamedParameterJdbcTemplate|SimpleJdbcInsert|JdbcClient)
-  - (?i)(Dapper|SqlMapper|QueryAsync|ExecuteAsync).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(Dapper|SqlMapper|QueryAsync|ExecuteAsync)
-  - (?i)(Exposed|Table\s*\(|varchar\s*\(|integer\s*\().{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(Exposed|Table\s*\(|varchar\s*\(|integer\s*\()
-  - (?i)(SQLAlchemy|Column\s*\(|Integer\s*\(|String\s*\().{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(SQLAlchemy|Column\s*\(|Integer\s*\(|String\s*\()
-  - (?i)(gorm|db\.Where|db\.Find|db\.Create|db\.Model).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(gorm|db\.Where|db\.Find|db\.Create|db\.Model)
+  - (?i)(MyBatis|mybatis|@Mapper|@Select|@Insert|@Update|@Delete|SqlSession).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(MyBatis|mybatis|@Mapper|@Select|@Insert|@Update|@Delete|SqlSession)
+  - (?i)(JdbcTemplate|NamedParameterJdbcTemplate|SimpleJdbcInsert|JdbcClient).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(JdbcTemplate|NamedParameterJdbcTemplate|SimpleJdbcInsert|JdbcClient)
+  - (?i)(Dapper|SqlMapper|QueryAsync|ExecuteAsync).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(Dapper|SqlMapper|QueryAsync|ExecuteAsync)
+  - (?i)(Exposed|Table\s*\(|varchar\s*\(|integer\s*\().{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(Exposed|Table\s*\(|varchar\s*\(|integer\s*\()
+  # Column( do SQLAlchemy — (?<!@) evita falso positivo em @Column JPA
+  - (?i)SQLAlchemy.{0,80}(Column|Integer|String)\s*\(.{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(?<!@)Column\s*\(.{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(SQLAlchemy|(?<!@)Column\s*\(|Integer\s*\(|String\s*\()
+  - (?i)(gorm|db\.Where|db\.Find|db\.Create|db\.Model).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(gorm|db\.Where|db\.Find|db\.Create|db\.Model)
   descricao_impacto: ORM além do Hibernate (MyBatis, Spring JDBC, Dapper, Exposed, SQLAlchemy, GORM) referencia CNPJ. Mapeamentos com tipo numérico ou tamanho fixo quebram com CNPJ alfanumérico.
   complexidade: Alta
 - id: FLAG-001
@@ -1786,16 +1811,17 @@ regras:
   - .yml
   nomes_arquivo: []
   padroes:
-  - (?i)(DynamoDB|DynamoDBMapper|DynamoDBTable|PutItemRequest|GetItemRequest|QueryRequest|ScanRequest).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(DynamoDB|DynamoDBMapper|DynamoDBTable|PutItemRequest|GetItemRequest)
-  - (?i)(Firestore|FirestoreTemplate|CollectionReference|DocumentReference|firestore\.collection).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(Firestore|FirestoreTemplate|CollectionReference|DocumentReference)
-  - (?i)(CosmosDB|CosmosClient|CosmosContainer|CosmosTemplate|cosmos\.container).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(CosmosDB|CosmosClient|CosmosContainer|CosmosTemplate)
-  - (?i)(Cassandra|CassandraTemplate|CqlSession|@Table|@PrimaryKey|@Column).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(CassandraTemplate|CqlSession|@PrimaryKey)
-  - (?i)(Couchbase|CouchbaseTemplate|N1qlQuery|@N1qlPrimaryIndexed).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|documento)
-  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|documento).{0,60}(Couchbase|CouchbaseTemplate|N1qlQuery)
+  - (?i)(DynamoDB|DynamoDBMapper|DynamoDBTable|PutItemRequest|GetItemRequest|QueryRequest|ScanRequest).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(DynamoDB|DynamoDBMapper|DynamoDBTable|PutItemRequest|GetItemRequest)
+  - (?i)(Firestore|FirestoreTemplate|CollectionReference|DocumentReference|firestore\.collection).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(Firestore|FirestoreTemplate|CollectionReference|DocumentReference)
+  - (?i)(CosmosDB|CosmosClient|CosmosContainer|CosmosTemplate|cosmos\.container).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(CosmosDB|CosmosClient|CosmosContainer|CosmosTemplate)
+  # Sem @Column/@Table — anotações JPA genéricas geram falso positivo em qualquer entidade
+  - (?i)(Cassandra|CassandraTemplate|CqlSession|@PrimaryKey|@PrimaryKeyClass|@CassandraType).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(CassandraTemplate|CqlSession|@PrimaryKey|@CassandraType)
+  - (?i)(Couchbase|CouchbaseTemplate|N1qlQuery|@N1qlPrimaryIndexed).{0,60}(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b)
+  - (?i)(cnpj|cpfCnpj|cpf_cnpj|taxId|\bdocumento\b).{0,60}(Couchbase|CouchbaseTemplate|N1qlQuery)
   descricao_impacto: Banco NoSQL (DynamoDB, Firestore, CosmosDB, Cassandra, Couchbase) armazena ou consulta CNPJ. Partition keys, sort keys ou índices secundários com tipo numérico quebram com CNPJ alfanumérico.
   complexidade: Alta
 - id: EXT-001

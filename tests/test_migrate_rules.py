@@ -129,7 +129,7 @@ def test_rule_example(rule_id: str, confidence: str, before: str, after: str, fi
     ("Test.java", "public String getCnpj() {"),
     # comentários e imports
     ("Test.java", "// cnpj.replaceAll(\"[^0-9]\", \"\")"),
-    ("Test.java", "import br.com.bscash.documento.CnpjUtils;"),
+    ("Test.java", "import br.com.bscash.utils.DocumentoUtils;"),
     # campo sensível sem operação incompatível
     ("Test.java", "log.info(\"cnpj={}\", cnpj);"),
     ("Test.java", "String cnpj = cliente.getCnpj();"),
@@ -168,6 +168,36 @@ def test_val003_detects_pattern_annotation() -> None:
     result = transform_file("Test.java", line, _RULES)
     matched = [p for p in result.review_items if p.rule_id == "VAL-003"]
     assert matched, f"VAL-003 nao detectou: {line!r}"
+
+
+# ─── renomeacao CnpjUtils -> DocumentoUtils ──────────────────────────────────
+
+def test_rn001_troca_import_legado() -> None:
+    content = (
+        "package br.com.bscash.boleto;\n"
+        "\n"
+        "import br.com.bscash.documento.CnpjUtils;\n"
+        "\n"
+        "public class Boleto {\n"
+        "    String doc = CnpjUtils.removeMascara(pagador.getDocumento());\n"
+        "}\n"
+    )
+    result = transform_file("Boleto.java", content, _RULES)
+
+    assert "CnpjUtils" not in result.transformed
+    assert "DocumentoUtils.removeMascara(pagador.getDocumento())" in result.transformed
+    assert "import br.com.bscash.utils.DocumentoUtils;" in result.transformed
+    assert result.transformed.count("import ") == 1
+
+
+def test_import_legado_mantido_se_restam_chamadas_nao_migradas() -> None:
+    # metodo fora do conjunto oficial: a chamada permanece, logo o import tambem
+    content = (
+        "import br.com.bscash.documento.CnpjUtils;\n"
+        "String x = CnpjUtils.metodoDesconhecido(cnpj);\n"
+    )
+    result = transform_file("Boleto.java", content, _RULES)
+    assert "import br.com.bscash.documento.CnpjUtils;" in result.transformed
 
 
 # ─── teste de sanidade: todas as regras têm ao menos um exemplo ───────────────

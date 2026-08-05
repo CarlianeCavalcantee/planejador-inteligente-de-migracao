@@ -1,15 +1,33 @@
 # Regras declarativas de transformação para migração CNPJ alfanumérico.
-# Lib oficial: br.com.bscash.documento.CnpjUtils
-#   CnpjUtils.removeMascara(cnpj)  — remove [^A-Z0-9], faz toUpperCase
-#   CnpjUtils.formataCnpj(cnpj)    — aplica máscara XX.XXX.XXX/XXXX-DD
-#   CnpjUtils.estaFormatado(cnpj)  — valida máscara alfanumérica
-#   CnpjUtils.isBlank(cnpj)        — null/empty/blank check
+# Lib oficial: br.com.bscash.utils.DocumentoUtils (antiga DocumentoUtils)
+#   DocumentoUtils.removeMascara(cnpj)  — remove [^A-Z0-9], faz toUpperCase
+#   DocumentoUtils.formataCnpj(cnpj)    — aplica máscara XX.XXX.XXX/XXXX-DD
+#   DocumentoUtils.estaFormatado(cnpj)  — valida máscara alfanumérica
+#   DocumentoUtils.isBlank(cnpj)        — null/empty/blank check
+#   DocumentoUtils.formataParaTamanhoFixo(doc, n) — campo fixo (CNAB) sem perder letras
 #
 # match      = regex Python (aplicada linha a linha)
 # replace    = substituição (grupos \1, \2...)
 # priority   = ordem de exibição no relatório (maior = mais importante)
 # confidence = auto (aplica direto) | review (marca para revisão humana)
 # examples   = lista de casos before/after para testes automatizados
+
+# ─── RENAME ──────────────────────────────────────────────────────────────────
+
+- id: RN-001
+  language: java
+  category: RENAME
+  priority: 110
+  match: '\bCnpjUtils\s*\.\s*(removeMascara|formataCnpj|estaFormatado|isBlank|formataParaTamanhoFixo)\s*\('
+  replace: 'DocumentoUtils.\1('
+  add_import: 'import br.com.bscash.utils.DocumentoUtils;'
+  confidence: auto
+  description: "CnpjUtils.x() -> DocumentoUtils.x() — classe renomeada para br.com.bscash.utils.DocumentoUtils"
+  examples:
+    - before: 'String doc = CnpjUtils.removeMascara(pagador.getDocumento());'
+      after:  'String doc = DocumentoUtils.removeMascara(pagador.getDocumento());'
+    - before: 'return CnpjUtils.formataCnpj(cnpj);'
+      after:  'return DocumentoUtils.formataCnpj(cnpj);'
 
 # ─── REMOVE MASK ─────────────────────────────────────────────────────────────
 
@@ -18,53 +36,53 @@
   category: REMOVE_MASK
   priority: 100
   match: '((?:cnpj|cpfCnpj|cpf_cnpj|taxId|tax_id|documento)[\w.]*)\.replaceAll\s*\(\s*"[^"]*\[\^(?:0-9|A-Z0-9)[^"]*"\s*,\s*""\s*\)'
-  replace: 'CnpjUtils.removeMascara(\1)'
-  add_import: 'import br.com.bscash.documento.CnpjUtils;'
+  replace: 'DocumentoUtils.removeMascara(\1)'
+  add_import: 'import br.com.bscash.utils.DocumentoUtils;'
   confidence: auto
-  description: "replaceAll('[^0-9]','') ou replaceAll('[^A-Z0-9]','') -> CnpjUtils.removeMascara()"
+  description: "replaceAll('[^0-9]','') ou replaceAll('[^A-Z0-9]','') -> DocumentoUtils.removeMascara()"
   examples:
     - before: 'String clean = cnpj.replaceAll("[^0-9]", "");'
-      after:  'String clean = CnpjUtils.removeMascara(cnpj);'
+      after:  'String clean = DocumentoUtils.removeMascara(cnpj);'
     - before: 'String clean = cnpj.replaceAll("[^A-Z0-9]", "");'
-      after:  'String clean = CnpjUtils.removeMascara(cnpj);'
+      after:  'String clean = DocumentoUtils.removeMascara(cnpj);'
 
 - id: RM-002
   language: ts
   category: REMOVE_MASK
   priority: 100
   match: '([\w.]+)\.replace\s*\(/\\D/g\s*,\s*[''"]{1}\s*[''"]{1}\s*\)'
-  replace: 'CnpjUtils.removeMascara(\1)'
+  replace: 'DocumentoUtils.removeMascara(\1)'
   confidence: review
-  description: ".replace(/\\D/g,'') -> CnpjUtils.removeMascara() — confirmar se deve usar lib equivalente no frontend"
+  description: ".replace(/\\D/g,'') -> DocumentoUtils.removeMascara() — confirmar se deve usar lib equivalente no frontend"
   examples:
     - before: "const clean = cnpj.replace(/\\D/g, '');"
-      after:  "const clean = CnpjUtils.removeMascara(cnpj);"
+      after:  "const clean = DocumentoUtils.removeMascara(cnpj);"
 
 - id: RM-003
   language: java
   category: REMOVE_MASK
   priority: 95
   match: '([\w.]+)\.replace\s*\(\s*"\."\s*,\s*""\s*\)\.replace\s*\(\s*"/"\s*,\s*""\s*\)\.replace\s*\(\s*"-"\s*,\s*""\s*\)'
-  replace: 'CnpjUtils.removeMascara(\1)'
-  add_import: 'import br.com.bscash.documento.CnpjUtils;'
+  replace: 'DocumentoUtils.removeMascara(\1)'
+  add_import: 'import br.com.bscash.utils.DocumentoUtils;'
   confidence: auto
-  description: "chain replace('.').replace('/').replace('-') -> CnpjUtils.removeMascara()"
+  description: "chain replace('.').replace('/').replace('-') -> DocumentoUtils.removeMascara()"
   examples:
     - before: 'String s = cnpj.replace(".", "").replace("/", "").replace("-", "");'
-      after:  'String s = CnpjUtils.removeMascara(cnpj);'
+      after:  'String s = DocumentoUtils.removeMascara(cnpj);'
 
 - id: RM-004
   language: java
   category: REMOVE_MASK
   priority: 98
   match: '([\w.]+)\.replaceAll\s*\(\s*"\[\^A-Z0-9\]"\s*,\s*""\s*\)'
-  replace: 'CnpjUtils.removeMascara(\1)'
-  add_import: 'import br.com.bscash.documento.CnpjUtils;'
+  replace: 'DocumentoUtils.removeMascara(\1)'
+  add_import: 'import br.com.bscash.utils.DocumentoUtils;'
   confidence: review
-  description: "replaceAll('[^A-Z0-9]','') em qualquer variável -> CnpjUtils.removeMascara() — confirmar que é CNPJ"
+  description: "replaceAll('[^A-Z0-9]','') em qualquer variável -> DocumentoUtils.removeMascara() — confirmar que é CNPJ"
   examples:
     - before: 'String clean = value.replaceAll("[^A-Z0-9]", "");'
-      after:  'String clean = CnpjUtils.removeMascara(value);'
+      after:  'String clean = DocumentoUtils.removeMascara(value);'
 
 
 - id: RX-001
@@ -146,30 +164,30 @@
   category: FORMATTER
   priority: 85
   match: '([\w.]+)\s*=\s*CNPJ_FORMATADOR\.matcher\(([\w.]+)\)\.replaceAll\s*\(\s*"\$1\.\$2\.\$3/\$4-\$5"\s*\)'
-  replace: '\1 = CnpjUtils.formataCnpj(\2)'
-  add_import: 'import br.com.bscash.documento.CnpjUtils;'
+  replace: '\1 = DocumentoUtils.formataCnpj(\2)'
+  add_import: 'import br.com.bscash.utils.DocumentoUtils;'
   confidence: review
-  description: "CNPJ_FORMATADOR.matcher(x).replaceAll() -> CnpjUtils.formataCnpj(x) — confirmar que o Pattern local era numérico (o da CnpjUtils já é alfanumérico)"
+  description: "CNPJ_FORMATADOR.matcher(x).replaceAll() -> DocumentoUtils.formataCnpj(x) — confirmar que o Pattern local era numérico (o da DocumentoUtils já é alfanumérico)"
   examples:
     - before: 'result = CNPJ_FORMATADOR.matcher(value).replaceAll("$1.$2.$3/$4-$5");'
-      after:  'result = CnpjUtils.formataCnpj(value);'
+      after:  'result = DocumentoUtils.formataCnpj(value);'
     - before: 'formatted = CNPJ_FORMATADOR.matcher(cnpj).replaceAll("$1.$2.$3/$4-$5");'
-      after:  'formatted = CnpjUtils.formataCnpj(cnpj);'
+      after:  'formatted = DocumentoUtils.formataCnpj(cnpj);'
 
 - id: FMT-002
   language: java
   category: FORMATTER
   priority: 85
   match: '(formataCNPJ|formatarCNPJ|maskCNPJ|aplicaMascaraCNPJ)\s*\(\s*([\w.]+)\s*\)'
-  replace: 'CnpjUtils.formataCnpj(\2)'
-  add_import: 'import br.com.bscash.documento.CnpjUtils;'
+  replace: 'DocumentoUtils.formataCnpj(\2)'
+  add_import: 'import br.com.bscash.utils.DocumentoUtils;'
   confidence: auto
-  description: "formataCNPJ(x) -> CnpjUtils.formataCnpj(x)"
+  description: "formataCNPJ(x) -> DocumentoUtils.formataCnpj(x)"
   examples:
     - before: 'String f = formataCNPJ(cnpj);'
-      after:  'String f = CnpjUtils.formataCnpj(cnpj);'
+      after:  'String f = DocumentoUtils.formataCnpj(cnpj);'
     - before: 'return maskCNPJ(value);'
-      after:  'return CnpjUtils.formataCnpj(value);'
+      after:  'return DocumentoUtils.formataCnpj(value);'
 
 # ─── VALIDATION ──────────────────────────────────────────────────────────────
 
@@ -178,40 +196,40 @@
   category: VALIDATION
   priority: 85
   match: 'CNPJ_SEM_MASCARA_LEGADO\.matcher\s*\(\s*([\w.]+)\s*\)\.matches\s*\(\s*\)'
-  replace: 'CnpjUtils.estaFormatado(\1)'
-  add_import: 'import br.com.bscash.documento.CnpjUtils;'
+  replace: 'DocumentoUtils.estaFormatado(\1)'
+  add_import: 'import br.com.bscash.utils.DocumentoUtils;'
   confidence: review
-  description: "CNPJ_SEM_MASCARA (legado numérico) -> CnpjUtils.estaFormatado() — confirmar semântica: estaFormatado() valida máscara alfanumérica XX.XXX.XXX/XXXX-DD"
+  description: "CNPJ_SEM_MASCARA (legado numérico) -> DocumentoUtils.estaFormatado() — confirmar semântica: estaFormatado() valida máscara alfanumérica XX.XXX.XXX/XXXX-DD"
   examples:
     - before: 'if (CNPJ_SEM_MASCARA_LEGADO.matcher(cnpj).matches()) {'
-      after:  'if (CnpjUtils.estaFormatado(cnpj)) {'
+      after:  'if (DocumentoUtils.estaFormatado(cnpj)) {'
 
 - id: VAL-001b
   language: java
   category: VALIDATION
   priority: 85
-  # Só faz auto se for um Pattern local (não o da CnpjUtils que já é alfanumérico)
-  match: '(?<!CnpjUtils\.)CNPJ_COM_MASCARA\.matcher\s*\(\s*([\w.]+)\s*\)\.matches\s*\(\s*\)'
-  replace: 'CnpjUtils.estaFormatado(\1)'
-  add_import: 'import br.com.bscash.documento.CnpjUtils;'
+  # Só faz auto se for um Pattern local (não o da DocumentoUtils que já é alfanumérico)
+  match: '(?<!DocumentoUtils\.)CNPJ_COM_MASCARA\.matcher\s*\(\s*([\w.]+)\s*\)\.matches\s*\(\s*\)'
+  replace: 'DocumentoUtils.estaFormatado(\1)'
+  add_import: 'import br.com.bscash.utils.DocumentoUtils;'
   confidence: review
-  description: "CNPJ_COM_MASCARA.matcher().matches() -> CnpjUtils.estaFormatado() — confirmar que o Pattern local era numérico"
+  description: "CNPJ_COM_MASCARA.matcher().matches() -> DocumentoUtils.estaFormatado() — confirmar que o Pattern local era numérico"
   examples:
     - before: 'boolean ok = CNPJ_COM_MASCARA.matcher(value).matches();'
-      after:  'boolean ok = CnpjUtils.estaFormatado(value);'
+      after:  'boolean ok = DocumentoUtils.estaFormatado(value);'
 
 - id: VAL-002
   language: java
   category: VALIDATION
   priority: 85
   match: '(unmaskCnpj|cnpjSemFormatacao)\s*\(\s*([\w.]+)\s*\)'
-  replace: 'CnpjUtils.removeMascara(\2)'
-  add_import: 'import br.com.bscash.documento.CnpjUtils;'
+  replace: 'DocumentoUtils.removeMascara(\2)'
+  add_import: 'import br.com.bscash.utils.DocumentoUtils;'
   confidence: auto
-  description: "unmaskCnpj(x) -> CnpjUtils.removeMascara(x)"
+  description: "unmaskCnpj(x) -> DocumentoUtils.removeMascara(x)"
   examples:
     - before: 'String raw = unmaskCnpj(cnpj);'
-      after:  'String raw = CnpjUtils.removeMascara(cnpj);'
+      after:  'String raw = DocumentoUtils.removeMascara(cnpj);'
 
 # ─── SQL ─────────────────────────────────────────────────────────────────────
 
@@ -329,7 +347,7 @@
   match: '@Pattern\s*\(\s*regexp\s*=\s*"(\^?)\\d\{14\}(\$?)"'
   replace: '@Pattern(regexp = "\1[A-Z0-9]{14}\2"'
   confidence: review
-  description: "@Pattern(regexp=\"\\d{14}\") -> [A-Z0-9]{14} — alinhado com CNPJ_SEM_MASCARA da CnpjUtils"
+  description: "@Pattern(regexp=\"\\d{14}\") -> [A-Z0-9]{14} — alinhado com CNPJ_SEM_MASCARA da DocumentoUtils"
   examples:
     - before: '@Pattern(regexp = "^\\d{14}$")'
       after:  '@Pattern(regexp = "^[A-Z0-9]{14}$")'
