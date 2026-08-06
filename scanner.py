@@ -262,6 +262,10 @@ def _cmd_validate_flow(argv: list[str]) -> None:
                    help="Filtra arquivos do fluxo no modo -r; seleciona repos no modo fluxo completo")
     p.add_argument("--local", metavar="DIR",
                    help="Dir com repos clonados para re-scan do fluxo completo")
+    p.add_argument("--repos-root", metavar="DIR", action="append",
+                   help="Raiz adicional onde procurar o repo local (pode repetir)")
+    p.add_argument("--no-clone", action="store_true",
+                   help="Nao clona da org quando o repo nao for encontrado localmente")
     p.add_argument("--scan-json", metavar="FILE",
                    help="JSON de scan alternativo (modo fluxo sem --local)")
     args = p.parse_args(argv)
@@ -272,59 +276,64 @@ def _cmd_validate_flow(argv: list[str]) -> None:
     if args.repo:
         from core.flow_validator import validate_repo, print_validation_result
         from core.local_client import scan_repo_local
+        from core.repo_resolver import (
+            RepoNotFound, checkout_branch, current_branch, resolve_repo_path,
+        )
 
-        repo_path = args.repo
-        repos_dir = "repos"
-
-        # Resolve o path: se não existe como diretório, tenta repos/<nome>
-        if not os.path.isdir(repo_path):
-            candidate = os.path.join(repos_dir, repo_path)
-            if os.path.isdir(candidate):
-                # já clonado em repos/ — usa direto, só faz checkout se --branch
-                repo_path = candidate
-                if args.branch:
-                    import subprocess
-                    r = subprocess.run(["git", "-C", repo_path, "checkout", args.branch],
-                                       capture_output=True, text=True)
-                    if r.returncode != 0:
-                        print(f"Falha ao fazer checkout de '{args.branch}': {r.stderr.strip()}")
-                        sys.exit(1)
-                    print(f"Branch: {args.branch}")
-            else:
-                # não existe localmente — clona da org
-                token = os.getenv("GITHUB_TOKEN")
-                if not token:
-                    print("GITHUB_TOKEN nao definido — necessario para clonar o repo.")
-                    sys.exit(1)
-                org = cfg["github_org"]
-                repo_name = repo_path
-                repo_path = os.path.join(repos_dir, repo_name)
-                from scripts.clone_repos import clone_or_update
-                print(f"Clonando {org}/{repo_name}" + (f" @ {args.branch}" if args.branch else "") + "...")
-                ok = clone_or_update(repo_name, org, token, repos_dir,
-                                     update=False, branch=args.branch)
-                if not ok:
-                    print(f"Falha ao clonar {repo_name}.")
-                    sys.exit(1)
-        elif args.branch:
-            # path explícito existente + --branch
-            import subprocess
-            r = subprocess.run(["git", "-C", repo_path, "checkout", args.branch],
-                               capture_output=True, text=True)
-            if r.returncode != 0:
-                print(f"Falha ao fazer checkout de '{args.branch}': {r.stderr.strip()}")
+        repos_dir = cfg.get("repos_dir") or "repos"
+        try:
+            repo_path = resolve_repo_path(args.repo, cfg, extra_roots=args.repos_root)
+        except RepoNotFound as e:
+            token = os.getenv("GITHUB_TOKEN")
+            if args.no_clone or not token:
+                print(e)
+                if not args.no_clone and not token:
+                    print("GITHUB_TOKEN nao definido — nao foi possivel clonar da org.")
                 sys.exit(1)
-            print(f"Branch: {args.branch}")
+
+            org = cfg["github_org"]
+            repo_name = e.name
+            repo_path = os.path.join(repos_dir, repo_name)
+            from scripts.clone_repos import clone_or_update
+            print(f"Nao encontrado localmente. Clonando {org}/{repo_name}"
+                  + (f" @ {args.branch}" if args.branch else "") + "...")
+            ok = clone_or_update(repo_name, org, token, repos_dir,
+                                 update=False, branch=args.branch)
+            if not ok:
+                print(f"Falha ao clonar {repo_name}.")
+                sys.exit(1)
+
+        print(f"Repositorio: {repo_path}")
+        if args.branch:
+            ok, msg = checkout_branch(repo_path, args.branch)
+            print(msg)
+            if not ok:
+                sys.exit(1)
+        else:
+            atual = current_branch(repo_path)
+            if atual:
+                print(f"Branch: {atual} (atual)")
 
         result = validate_repo(repo_path, cfg, flow_id=args.flow)
 
         local_dir = os.path.dirname(os.path.normpath(repo_path)) or "."
         repo_name = os.path.basename(os.path.normpath(repo_path))
+        keywords: list[str] = []
         try:
             cands, _ = scan_repo_local(repo_name, local_dir, cfg["ignore_paths"], cfg["regras"])
-            files_scanned = len({fp for fp, _, _ in cands})
+            arquivos = {fp for fp, _, _ in cands}
+            if args.flow:
+                from core.flow_validator import _flow_path_keywords
+                keywords = _flow_path_keywords(args.flow, cfg)
+                arquivos = {fp for fp in arquivos if any(k in fp.lower() for k in keywords)}
+            files_scanned = len(arquivos)
         except Exception:
             files_scanned = 0
+
+        if args.flow and files_scanned == 0:
+            print(f"Aviso: nenhum arquivo do repo casa com as keywords do fluxo "
+                  f"'{args.flow}' ({', '.join(keywords) or args.flow}).")
+            print("       Rode sem --flow para validar o repositorio inteiro.")
 
         print_validation_result(result, files_scanned=files_scanned)
         sys.exit(0 if result.status == "APROVADO" else 1)
@@ -337,7 +346,21 @@ def _cmd_validate_flow(argv: list[str]) -> None:
     from core.flow_validator import validate_flow_from_json, validate_flow_local, print_validation_result
 
     if args.local:
-        result = validate_flow_local(args.flow, args.local, cfg)
+        local_dir = os.path.normpath(args.local)
+        # --local espera a pasta-pai dos clones (ex: workspace/), nao um repo unico.
+        if os.path.isdir(os.path.join(local_dir, ".git")):
+            parent = os.path.dirname(local_dir) or "."
+            name = os.path.basename(local_dir)
+            print(f"Erro: --local aponta para um repositorio git ({local_dir}).")
+            print("      Use a pasta-pai dos clones, ou -r para validar um repo:")
+            print(f"        python scanner.py validate-flow --flow {args.flow} --local \"{parent}\"")
+            branch_hint = f" --branch {args.branch}" if args.branch else ""
+            print(f"        python scanner.py validate-flow -r {name}{branch_hint} --flow {args.flow}")
+            sys.exit(1)
+        if args.branch:
+            print("Aviso: --branch e ignorado no modo --local (fluxo completo).")
+            print("       Use -r <repo> --branch <branch> para validar um repo em uma branch.")
+        result = validate_flow_local(args.flow, local_dir, cfg)
     else:
         scan_file = args.scan_json or cfg.get("output_file", "impacto_cnpj.json")
         if not os.path.exists(scan_file):

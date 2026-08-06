@@ -77,6 +77,7 @@ _INCOMPATIBLE_OP = re.compile(
     r"|validarCNPJ|validateCNPJ|isCpf\b|isCnpj\b"
     r"|@Pattern\s*\(|@Digits\b|@Size\s*\(|@Min\s*\(|@Max\s*\(|@CNPJ\b"
     r"|formataCNPJ|formatarCNPJ|maskCNPJ|unmaskCnpj|formatCNPJ"
+    r"|\bCnpjUtils\s*\."
     r"|\bpadStart\s*\(|\bpadEnd\s*\(|\blpad\s*\(|\brpad\s*\("
     r"|StringUtils\.leftPad|StringUtils\.rightPad|CNPJ_FORMATADOR"
     r"|\[\^0-9\]|/\\D/g"
