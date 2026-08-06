@@ -21,7 +21,7 @@ _PATTERN_DESCRIPTIONS = [
     (r"@CPF|@CNPJ|@CpfCnpj|CpfCnpjValidator|CnpjValidator",
      "Bean Validation com anotação de validação de CNPJ numérico. Atualizar biblioteca ou implementação para suportar formato alfanumérico."),
     (r"CpfCnpjUtils|CnpjUtils|CpfUtils|DocumentoUtils",
-     "Classe utilitária de CPF/CNPJ com lógica de validação numérica. Refatorar algoritmo de dígito verificador para aceitar base alfanumérica."),
+     "Classe utilitária de CPF/CNPJ com lógica numérica ou desatualizada. Migrar as chamadas para a lib oficial br.com.bscash.utils.DocumentoUtils (antiga CnpjUtils)."),
     (r"substring\s*\(\s*0\s*,\s*[89]|slice\s*\(\s*0\s*,\s*[89]|\.substring\(8",
      "Acesso posicional por índice fixo (substring/slice) assumindo CNPJ de 14 dígitos. Refatorar para usar parsing semântico."),
     (r"inputMode.*numeric|type.*number|mask.*\d.*\d.*\d",

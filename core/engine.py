@@ -42,6 +42,8 @@ _PURE_PROPAGATION = re.compile(
     |^\s*return\s+(?:this\.)?\w+\s*;
     # atribuição simples: this.cnpj = cnpj; / x = y;
     |^\s*(?:this\.)?\w+\s*=\s*(?:this\.)?\w+\s*;
+    # atribuição com getter: this.x = obj.getY(); / this.documento = cobranca.getDocumento();
+    |^\s*(?:this\.)?\w+\s*=\s*[\w.]+\.get\w+\s*\(\s*\)\s*;
     # chamada de getter isolada: empresa.getCnpj() / obj.getDocumento()
     |^\s*[\w.]+\.get\w+\s*\(\s*\)\s*;
     # chamada de setter isolada: dto.setCnpj(cnpj);
@@ -52,7 +54,32 @@ _PURE_PROPAGATION = re.compile(
     |^\s*[\w.]+\.put\s*\([^)]*\)\s*;
     # assinatura de getter/setter
     |^\s*(?:public|private|protected)?\s*\w+\s+(?:get|set)\w+\s*\(
+    # assinatura de wrapper legado formatCnpj (corpo migrado para DocumentoUtils)
+    |^\s*(?:public|private|protected|static|\s)+\w+\s+formatCnpj\s*\(
+    # if só de tipo de documento (CPF/CNPJ enum) — sem operação de formato
+    |^\s*if\s*\(\s*TipoDocumento\w*\.\w+\.equals\s*\(
+    |^\s*if\s*\(\s*[\w.]+\.equals\s*\(\s*TipoDocumento\w*\.
     """
+)
+
+# Contexto claramente de CPF (não CNPJ) — evita marcar apenasNumeros/parseLong de CPF
+_CPF_ONLY_CONTEXT = re.compile(
+    r"(?i)(?:\bcpf\b|TipoDocumento(?:Enum)?\.CPF|\bisPF\b|TipoPessoa\.FISICA"
+    r"|PESSOA_FISICA|pessoaFisica|tipo\s*==\s*['\"]?F['\"]?)"
+)
+_CNPJ_CONTEXT = re.compile(
+    r"(?i)(?:\bcnpj\b|TipoDocumento(?:Enum)?\.CNPJ|\bisPJ\b|TipoPessoa\.JURIDICA"
+    r"|PESSOA_JURIDICA|pessoaJuridica)"
+)
+
+# Campos com "documento" no nome que NÃO são CNPJ (boleto, título, tipo enum…)
+_NON_CNPJ_DOC_FIELD = re.compile(
+    r"(?i)(?:numeroDocumentoCobranca|nrDocumentoCobranca|numero_documento_cobranca"
+    r"|numerodocumento|numeroDocumento|nr_documento(?!_federal)"
+    r"|tipoDocumento|tipo_documento|nomeArquivoOriginal"
+    r"|getNumeroDocumentoCobranca|setNumeroDocumentoCobranca|getNumeroDocumento|setNumeroDocumento"
+    r"|getTipoDocumento|setTipoDocumento"
+    r"|IdentificarNumeroDocumento)"
 )
 
 
@@ -90,7 +117,10 @@ _INCOMPATIBLE_OP = re.compile(
     r"|(?:validar|validate|check|calcular)(?:Cnpj|CpfCnpj|Documento|Document)"
     r"|validarCNPJ|validateCNPJ"
     r"|isCpf\b|isCnpj\b"
-    r"|CpfCnpjValidator|CnpjValidator|DocumentoUtils"
+    # Classes utilitárias de documento: as chamadas oficiais da DocumentoUtils são
+    # resgatadas pelas compatibility_rules; o que sobra aqui é legado (CnpjUtils,
+    # cópias locais de DocumentoUtils) e precisa migrar para br.com.bscash.utils.
+    r"|CpfCnpjValidator|CnpjValidator|DocumentoUtils|CnpjUtils"
     r"|@IsCNPJ|@ValidateCNPJ|@CnpjValid"
     r"|@Pattern\s*\(|@Digits\b|@Size\s*\(|@Min\s*\(|@Max\s*\(|@Positive\b"
     r"|formataCNPJ|formatarCNPJ|maskCNPJ|unmaskCnpj|formatCNPJ|formatCpfCnpj"
@@ -139,7 +169,11 @@ def _is_pure_propagation(line: str) -> bool:
     return bool(_PURE_PROPAGATION.match(line))
 
 
-def is_false_positive(line: str, compat_rules: list[dict] | None = None) -> bool:
+def is_false_positive(
+    line: str,
+    compat_rules: list[dict] | None = None,
+    context: str = "",
+) -> bool:
     """Descarta linhas que não representam risco real de migração."""
     stripped = line.strip()
     if not stripped:
@@ -150,6 +184,19 @@ def is_false_positive(line: str, compat_rules: list[dict] | None = None) -> bool
     # propagação pura estrutural (independe de campo)
     if _is_pure_propagation(line):
         return True
+
+    window = f"{context}\n{line}" if context else line
+
+    # Contexto exclusivo de CPF (ex: String cpf = apenasNumeros(...)) — fora do escopo CNPJ
+    if _CPF_ONLY_CONTEXT.search(window) and not _CNPJ_CONTEXT.search(window):
+        return True
+
+    # Campos "documento" de boleto/cobrança (não CNPJ) sem menção a cnpj
+    if _NON_CNPJ_DOC_FIELD.search(line) and not re.search(r"(?i)\bcnpj\b", line):
+        # Ainda reporta se houver operação tipicamente de formatação de CNPJ + cnpj na linha
+        if not re.search(r"(?i)\bcnpj\b", window):
+            return True
+
     # linha contém campo sensível mas nenhuma operação relevante
     # exceto se já bate em uma compat rule (operação válida do novo formato)
     if _SENSITIVE_FIELD.search(line) and not _has_relevant_operation(line):
@@ -163,8 +210,12 @@ def scan_file(content: str, filepath: str, rule: dict, compat_rules: list[dict] 
     compiled = rule.get("_compiled", [])
     compat_rules = compat_rules or []
     matches = []
-    for lineno, line in enumerate(content.splitlines(), start=1):
-        if is_false_positive(line, compat_rules):
+    lines = content.splitlines()
+    for lineno, line in enumerate(lines, start=1):
+        # Janela de contexto (linhas anteriores) para detectar bloco CPF/isPF
+        ctx_start = max(0, lineno - 4)
+        context = "\n".join(lines[ctx_start:lineno - 1])
+        if is_false_positive(line, compat_rules, context=context):
             continue
         for pat in compiled:
             if pat.search(line):

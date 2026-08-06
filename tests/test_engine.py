@@ -33,6 +33,9 @@ from core.engine import (
     "return documento;",
     "this.cnpj = cnpj;",
     "this.documento = documento;",
+    "this.numeroDocumentoCobranca = cobranca.getNumeroDocumentoCobranca();",
+    "this.tipoDocumento = cobranca.getTipoDocumento();",
+    "this.documento = cobranca.getDocumento();",
     "dto.setCnpj(cnpj);",
     "dto.setDocumento(documento);",
     "empresa.getCnpj();",
@@ -43,9 +46,50 @@ from core.engine import (
     "public String getCnpj() {",
     "public void setCnpj(String cnpj) {",
     "public String getDocumento() {",
+    "public static String formatCnpj(String cnpj) {",
+    "if (TipoDocumentoEnum.CPF.equals(cobranca.getTipoDocumento()))",
+    "String cpf = StringHelper.apenasNumeros(documento);",
 ])
 def test_is_false_positive_returns_true_for_noise(line):
     assert is_false_positive(line) is True
+
+
+def test_is_false_positive_cpf_block_with_context():
+    """apenasNumeros em bloco isPF não é impacto de CNPJ alfanumérico."""
+    context = "if (isPF) {\n    numeroInscricao = StringHelper.preencherZerosEsquerda("
+    line = "StringHelper.apenasNumeros(documentoRaw), 14);"
+    assert is_false_positive(line, context=context) is True
+
+
+def test_is_false_positive_cnpj_apenas_numeros_still_impact():
+    line = 'String cnpj = StringHelper.apenasNumeros(documento);'
+    assert is_false_positive(line) is False
+
+
+def test_is_false_positive_column_name_documento_is_noise_via_rules():
+    """@Column(name=documento) sem length não é impacto — coberto pelas regras ORM/JPA."""
+    from core.config import load_config, _compile_rules
+    from core.engine import scan_file
+    cfg = load_config("scanner-config.yaml")
+    _compile_rules(cfg)
+    content = "\n".join([
+        '@Column(name = "pagadordocumento")',
+        "private String pagadorDocumento;",
+        '@Column(name = "documento")',
+        "private String documento;",
+        '@Column(name = "cnpj", length = 14)',
+        "private String cnpj;",
+    ])
+    impacts = []
+    for rule in cfg["regras"]:
+        if ".java" not in rule.get("extensoes", []):
+            continue
+        impacts.extend(scan_file(content, "Entity.java", rule, []))
+    # Só o @Column com length=14 + cnpj deve aparecer (se a regra JPA casar)
+    pending = [m for m in impacts if m["status_migracao"] == "impacto"]
+    assert all("length" in m["trecho_codigo"].lower() or "cnpj" in m["trecho_codigo"].lower()
+               for m in pending)
+    assert not any("pagadordocumento" in m["trecho_codigo"].lower() for m in pending)
 
 
 @pytest.mark.parametrize("line", [

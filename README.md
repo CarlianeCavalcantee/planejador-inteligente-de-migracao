@@ -207,22 +207,40 @@ Verifica se um repositório ou fluxo completo está compatível com CNPJ alfanum
 Escaneia um repo clonado localmente e executa os checks de compatibilidade:
 
 ```bash
-# Pelo nome do repo — clona automaticamente da org se ainda não estiver em repos/
+# Pelo nome do repo — encontra o clone local automaticamente
 python scanner.py validate-flow -r authorizing-lib --flow boleto
 python scanner.py validate-flow -r api-adesao --flow onboarding
 
-# Em uma branch específica — clona/atualiza na branch antes de escanear
-python scanner.py validate-flow -r authorizing-lib --branch feature/cnpj-alfa --flow boleto
+# Na branch da sua demanda — faz checkout antes de escanear
+python scanner.py validate-flow -r api-cobrancaterceiro --branch feature/AD-14230 --flow boleto
 
-# Pelo path local (repo já clonado em outro lugar)
-python scanner.py validate-flow -r repos/api-adesao --flow onboarding
+# Pelo path local (repo clonado fora das raízes conhecidas)
 python scanner.py validate-flow -r C:\projetos\authorizing-lib --flow boleto
+
+# Raiz adicional de busca, sem precisar do path completo
+python scanner.py validate-flow -r ms-boleto --repos-root D:\clones --flow boleto
 
 # Sem filtro de fluxo — valida o repo inteiro
 python scanner.py validate-flow -r authorizing-lib
 ```
 
-O filtro `--flow` usa o mapeamento `tela_keywords` do config para resolver o nome do fluxo em keywords de caminho (ex: `boleto` → `boleto, cobranca, cobrancaterceiro`). Se o fluxo não tiver mapeamento, usa o próprio nome como filtro.
+#### Como o caminho do repo é resolvido
+
+`-r` aceita tanto um path quanto só o nome do projeto. Na busca por nome, as raízes são consultadas nesta ordem:
+
+1. `--repos-root DIR` (pode repetir)
+2. Env `LOCAL_REPOS_DIRS` (lista separada por `;` ou `,`)
+3. `local_repos_dirs:` no `scanner-config.yaml`
+4. `repos/` dentro do próprio scanner
+5. O diretório que contém o scanner — ou seja, os projetos clonados lado a lado no mesmo workspace
+
+Se nada for encontrado, o scanner lista onde procurou e sugere nomes parecidos antes de tentar clonar da org. Use `--no-clone` para falhar em vez de clonar.
+
+#### Comportamento do `--branch`
+
+O checkout nunca descarta trabalho: se já estiver na branch pedida, o scanner segue direto; se houver alterações não commitadas em outra branch, ele aborta pedindo commit ou stash; e se a branch só existir em `origin`, ele cria a branch de rastreio local. Sem `--branch`, valida a branch que estiver ativa.
+
+O filtro `--flow` usa o mapeamento `tela_keywords` do config para resolver o nome do fluxo em keywords de caminho (ex: `boleto` → `boleto, cobranca, cobrancaterceiro`). Se o fluxo não tiver mapeamento, usa o próprio nome como filtro. Quando nenhum arquivo casa com as keywords, o scanner avisa em vez de reportar um resultado vazio como aprovado.
 
 ### Modo fluxo completo — uso antes da homologação
 
@@ -265,7 +283,8 @@ flows:
 | CHK-004 | Revisão | Nenhuma máscara numérica antiga (`99.999.999/9999-99`) |
 | CHK-005 | Crítico | Nenhum padding numérico (`padStart`, `lpad` com `'0'`) |
 | CHK-006 | Revisão | Nenhuma comparação de tamanho fixo (`length == 14`) |
-| CHK-007 | Revisão | Validação compatível presente (`CnpjUtils` ou `[A-Z0-9]{14}`) |
+| CHK-007 | Revisão | Validação compatível presente (`DocumentoUtils` ou `[A-Z0-9]{14}`) |
+| CHK-008 | Crítico | Nenhuma referência à `CnpjUtils` — classe renomeada para `DocumentoUtils` |
 
 Checks extras podem ser adicionados em `flow_checks:` no config.
 
@@ -302,7 +321,7 @@ python scanner.py validate-flow --flow onboarding --local repos/
 
 ## Migração automática (`migrate`)
 
-Aplica transformações automáticas no código dos repos clonados, alinhando-os à `CnpjUtils` oficial (`br.com.bscash.documento.CnpjUtils`). Complementa o scan respondendo: *"o que posso corrigir automaticamente agora?"*
+Aplica transformações automáticas no código dos repos clonados, alinhando-os à `DocumentoUtils` oficial (`br.com.bscash.utils.DocumentoUtils` — antiga `br.com.bscash.documento.CnpjUtils`). Complementa o scan respondendo: *"o que posso corrigir automaticamente agora?"*
 
 ### Comandos
 
@@ -339,18 +358,19 @@ O `--flow` usa os fluxos definidos em `flows:` no `scanner-config.yaml` — os m
 
 | ID | Linguagem | O que transforma | Confiança |
 |----|-----------|------------------|-----------|
-| RM-001 | Java | `replaceAll("[^0-9]","")` / `replaceAll("[^A-Z0-9]","")` → `CnpjUtils.removeMascara()` | auto |
-| RM-002 | TS/JS | `.replace(/\D/g,'')` → `CnpjUtils.removeMascara()` | review |
-| RM-003 | Java | `.replace(".","").replace("/","").replace("-","")` → `CnpjUtils.removeMascara()` | auto |
+| RN-001 | Java | `CnpjUtils.x()` → `DocumentoUtils.x()` + troca do import (classe renomeada) | auto |
+| RM-001 | Java | `replaceAll("[^0-9]","")` / `replaceAll("[^A-Z0-9]","")` → `DocumentoUtils.removeMascara()` | auto |
+| RM-002 | TS/JS | `.replace(/\D/g,'')` → `DocumentoUtils.removeMascara()` | review |
+| RM-003 | Java | `.replace(".","").replace("/","").replace("-","")` → `DocumentoUtils.removeMascara()` | auto |
 | RM-004 | Java | `replaceAll("[^A-Z0-9]","")` em qualquer variável | review |
 | RX-003 | Java | `"[0-9]{14}"` → `"[A-Z0-9]{14}"` | auto |
 | RX-004 | Java | `"\d{14}"` → `"[A-Z0-9]{14}"` | auto |
 | RX-005 | TS/JS | `/[0-9]{14}/` → `/[A-Z0-9]{14}/` | auto |
 | RX-006 | TS/JS | `/\d{14}/` → `/[A-Z0-9]{14}/` | auto |
-| FMT-001 | Java | `CNPJ_FORMATADOR.matcher().replaceAll()` → `CnpjUtils.formataCnpj()` | review |
-| FMT-002 | Java | `formataCNPJ()` / `maskCNPJ()` → `CnpjUtils.formataCnpj()` | auto |
-| VAL-001a/b | Java | `CNPJ_*_MASCARA.matcher().matches()` → `CnpjUtils.estaFormatado()` | review |
-| VAL-002 | Java | `unmaskCnpj()` → `CnpjUtils.removeMascara()` | auto |
+| FMT-001 | Java | `CNPJ_FORMATADOR.matcher().replaceAll()` → `DocumentoUtils.formataCnpj()` | review |
+| FMT-002 | Java | `formataCNPJ()` / `maskCNPJ()` → `DocumentoUtils.formataCnpj()` | auto |
+| VAL-001a/b | Java | `CNPJ_*_MASCARA.matcher().matches()` → `DocumentoUtils.estaFormatado()` | review |
+| VAL-002 | Java | `unmaskCnpj()` → `DocumentoUtils.removeMascara()` | auto |
 | VAL-003 | Java | `@Pattern(regexp="\d{14}")` → `[A-Z0-9]{14}` | review |
 | VAL-004 | Java | `@CNPJ` (Hibernate Validator numérico) | review |
 | SQL-001 | SQL | `VARCHAR(14)` / `CHAR(14)` → `VARCHAR(20)` | review |
@@ -551,7 +571,7 @@ scanner/
 ├── migrate/
 │   ├── cli.py              # Entry point: scan, fix, report, check, validate, history
 │   ├── transformer.py      # Motor de transformação + filtro de falsos positivos
-│   ├── rules.yaml          # Regras declarativas alinhadas à CnpjUtils
+│   ├── rules.yaml          # Regras declarativas alinhadas à DocumentoUtils
 │   ├── scanner_bridge.py   # Integração com JSON do scanner + suporte a flows
 │   ├── git_guard.py        # Verifica working tree limpa antes do fix
 │   ├── validator.py        # Executa testes dos repos após o fix
